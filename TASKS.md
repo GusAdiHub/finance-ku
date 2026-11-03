@@ -1,0 +1,66 @@
+# TASKS & PROGRESS TRACKER — SAKUKELUARGA
+
+## Status Milestone WBS
+
+- [x] **Tahap 1 — Inisialisasi Project**
+  - Setup repo, struktur folder backend & frontend, konfigurasi environment, setup database connection & Alembic.
+- [x] **Tahap 2 — Database & Model**
+  - Schema migration, User, Category, Transaction, Group, GroupMember, GroupInvitation, Receipt models, Seeding kategori default.
+- [x] **Tahap 3 — Authentication**
+  - Password hashing (bcrypt 12 rounds), JWT RFC 7519, Register, Login, Logout (blacklist/revocation), Me, Change Password, Protected Endpoints dependency.
+- [x] **Tahap 4 — Personal Finance**
+  - Category CRUD (system category protection), Transaction CRUD (IDOR prevention `owner_user_id`), Pagination & filter, Personal Dashboard, Personal Financial Report.
+- [x] **Tahap 5 — Family Finance**
+  - Group CRUD, Group Membership & RBAC (`owner`, `admin`, `member`), Cryptographic 8-character Invitation Codes (SHA-256 hash storage, quota & expiration checks), Join & Leave Group, Shared Ledger Transactions, Group Dashboard, Group Reports.
+- [x] **Tahap 6 — Frontend (Next.js)**
+  - Soft & Modern Blue Design System (`#2563EB`, `#F8FAFC`, Poppins typography).
+  - Mode Ramah Orang Tua (Elderly Mode) dengan ukuran font dinamis, tombol min 48px, dan kontras tinggi.
+  - Scope Switcher (`Pribadi` vs `Keluarga`) dengan selector grup kas bersama.
+  - PWA Configuration (`manifest.json`, mobile viewport).
+  - Centralized API Client (`frontend/lib/api.ts`).
+  - Auth State Context (`frontend/lib/auth-context.tsx`).
+  - Transaction Modal / Bottom Sheet (`frontend/components/transactions/TransactionModal.tsx`).
+  - Responsive Layout (`DesktopSidebar.tsx`, `MobileHeader.tsx`, `BottomNav.tsx`).
+  - Login & Register UI (`frontend/app/login/page.tsx`, `frontend/app/register/page.tsx`).
+  - Dashboard Page (`frontend/app/page.tsx`).
+  - History & Filter Page (`frontend/app/transactions/page.tsx`).
+  - Family Group Management (`frontend/app/groups/page.tsx`).
+  - Financial Report Page (`frontend/app/reports/page.tsx`).
+  - Category Management (`frontend/app/categories/page.tsx`).
+  - Profile & Account Settings (`frontend/app/profile/page.tsx`).
+  - Route Guard & AppShell Layout Isolation (`frontend/components/layout/AppShell.tsx`).
+- [x] **Tahap 7 — OCR Receipt Scanning**
+  - Upload receipt image dengan validasi format (JPEG, PNG, WebP) & size limit (5MB).
+  - Open-source OCR integration (`pytesseract` dengan bahasa Indonesia & Inggris).
+  - Image preprocessing (Grayscale, adaptive thresholding, noise reduction) via OpenCV & PIL.
+  - Regex & heuristic parser untuk mendeteksi merchant/toko, tanggal transaksi, line items belanjaan, dan total nominal rupiah.
+  - Dot-matrix 9-pin impact printer typo correction (`500` dari `286`/`586`, `000` dari `086`/`886`) dan format nominal rupiah standar Indonesia (`73.500`) tanpa desimal sen `,00`.
+  - Desain Simpel & Cepat untuk OCR Struk: Satu formulir terpadu yang ringkas tanpa kartu bertingkat yang membingungkan. Mendukung input manual tempat belanja dengan 4 quick chips (`Indomaret`, `Alfamart`, `Warung / Pasar`, `Apotek`), 1 dropdown kategori bersih dengan opsi custom input (+ Ketik Kategori Baru Sendiri) yang otomatis tersimpan, deteksi otomatis nominal rupiah dari struk, serta pemilihan buku catatan (Pribadi vs Kas Keluarga). OCR difokuskan pada ekstraksi nominal total rupiah tanpa menimpa input nama tempat belanja pengguna.
+  - Receipt draft management & review konfirmasi sebelum masuk ke transaksi keuangan (`POST /api/v1/receipts/{id}/confirm`).
+- [x] **Tahap 8 — Voice Input & Indonesian Financial NLP**
+  - Web Speech API integration (`lang="id-ID"`) pada browser frontend.
+  - Indonesian conversational financial NLP engine (`backend/app/services/voice_service.py`):
+    - Konversi kata angka bahasa Indonesia ke `Decimal` (e.g. *"dua puluh lima ribu"*, *"seratus lima puluh ribu"*, *"dua koma lima juta"*).
+    - Ekstraksi nominal via regex pola `50rb`, `50k`, `2,5 juta`, `Rp 50.000`.
+    - Klasifikasi otomatis tipe transaksi (`expense` vs `income`) berbasis kata kunci finansial.
+    - Pembersihan filler kata perintah (*"tolong catat"*, *"masukkan pengeluaran"*).
+    - Keyword matching ke kategori pengeluaran/pemasukan yang ada di database.
+  - Penanganan error browser speech yang informatif (izin mikrofon, network, hardware).
+  - Fitur *Quick Sample Voice Presets* (tombol sekali-klik contoh kalimat transaksi).
+- [x] **Tahap 9 — Testing & Security Verification**
+  - Automated tests untuk semua 7 skenario wajib authorization testing dari `docs/TESTING.md`:
+    - Scenario 1: Cross-user personal transaction isolation (mencegah IDOR).
+    - Scenario 2: Cross-group transaction isolation.
+    - Scenario 3: Non-owner mutation protection (admin/member tidak bisa hapus grup).
+    - Scenario 4: Departed member access revocation.
+    - Scenario 5: Group ID injection on personal endpoint rejection.
+    - Scenario 6: Spoofed `owner_user_id` and `created_by_user_id` rejection.
+    - Scenario 7: Expired and exhausted invitation code rejection.
+  - Unit & integration tests untuk OCR API (`test_ocr_api.py`).
+  - Unit & integration tests untuk Voice parsing & NLP (`test_voice_api.py`).
+- [x] **Tahap 10 — Production Deployment Architecture**
+  - Multi-stage Docker build untuk FastAPI backend (`backend/Dockerfile`) dengan sistem Tesseract OCR & paket bahasa Indonesia.
+  - Multi-stage Docker standalone build untuk Next.js (`frontend/Dockerfile`).
+  - Private bridge network (`finance_net`) mengisolasi MySQL 8.0 dari eksposur publik.
+  - Nginx HTTPS reverse proxy dengan SSL termination, kompresi Gzip, dan security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options).
+  - Skrip otomatis: `scripts/deploy.sh`, `scripts/backup_db.sh` (retensi 14 hari), dan `scripts/restore_db.sh`.

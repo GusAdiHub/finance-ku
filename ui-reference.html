@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SakuKeluarga — UI Reference for Claude Code</title>
+  <!-- Google Fonts: Poppins -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#EFF6FF',
+              100: '#DBEAFE',
+              500: '#3B82F6',
+              600: '#2563EB',
+              700: '#1D4ED8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Poppins', sans-serif; background-color: #F8FAFC; color: #0F172A; }
+    /* Elderly Friendly Mode Scaling Reference */
+    body.elderly-mode { font-size: 112%; }
+    body.elderly-mode .touch-target { min-height: 54px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col lg:flex-row pb-24 lg:pb-0">
+
+  <!-- ==========================================
+       1. DESKTOP SIDEBAR (lg:flex)
+       ========================================== -->
+  <aside class="hidden lg:flex flex-col w-72 bg-white border-r border-slate-200/80 p-6 shrink-0 justify-between">
+    <div class="space-y-6">
+      <!-- App Brand -->
+      <div class="flex items-center gap-3 px-2">
+        <div class="w-11 h-11 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-sm">
+          <i data-lucide="wallet" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg text-slate-900 leading-tight">SakuKeluarga</h1>
+          <p class="text-xs text-slate-500">Personal & Family Finance</p>
+        </div>
+      </div>
+
+      <!-- Navigation Links (Rounded-xl pills) -->
+      <nav class="space-y-1.5">
+        <a href="#dashboard" class="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-blue-50 text-blue-600 font-semibold text-sm transition">
+          <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+          <span>Beranda</span>
+        </a>
+        <a href="#transactions" class="flex items-center gap-3 px-4 py-3.5 rounded-xl text-slate-600 hover:bg-slate-50 font-medium text-sm transition">
+          <i data-lucide="receipt" class="w-5 h-5"></i>
+          <span>Riwayat Transaksi</span>
+        </a>
+        <a href="#family-groups" class="flex items-center gap-3 px-4 py-3.5 rounded-xl text-slate-600 hover:bg-slate-50 font-medium text-sm transition">
+          <i data-lucide="users" class="w-5 h-5"></i>
+          <span>Grup Keluarga</span>
+        </a>
+        <a href="#reports" class="flex items-center gap-3 px-4 py-3.5 rounded-xl text-slate-600 hover:bg-slate-50 font-medium text-sm transition">
+          <i data-lucide="pie-chart" class="w-5 h-5"></i>
+          <span>Laporan Keuangan</span>
+        </a>
+        <a href="#profile" class="flex items-center gap-3 px-4 py-3.5 rounded-xl text-slate-600 hover:bg-slate-50 font-medium text-sm transition">
+          <i data-lucide="user-Check" class="w-5 h-5"></i>
+          <span>Profil & Keamanan</span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Elderly Mode Toggle Card -->
+    <div class="p-4 rounded-2xl bg-blue-50/80 border border-blue-100 space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-blue-900 flex items-center gap-1.5">
+          <i data-lucide="eye" class="w-4 h-4 text-blue-600"></i> Mode Ramah Orang Tua
+        </span>
+        <button onclick="document.body.classList.toggle('elderly-mode')" class="px-3 py-1 rounded-full bg-blue-600 text-white text-xs font-medium">
+          Aktifkan
+        </button>
+      </div>
+      <p class="text-[11px] text-slate-600 leading-relaxed">Perbesar ukuran teks dan tombol agar lebih jelas dibaca.</p>
+    </div>
+  </aside>
+
+  <!-- ==========================================
+       2. MAIN CONTENT CONTAINER
+       ========================================== -->
+  <div class="flex-1 flex flex-col max-w-5xl mx-auto w-full">
+
+    <!-- STICKY TOP HEADER (Scope Switcher & Group Selector) -->
+    <header class="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 py-3.5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <!-- Scope Switcher: Personal vs Family (Strict Separation per PRD) -->
+        <div class="inline-flex p-1 rounded-2xl bg-slate-100 border border-slate-200/70">
+          <button class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-blue-600 shadow-sm font-semibold text-sm transition">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span>Pribadi</span>
+          </button>
+          <button class="flex items-center gap-2 px-4 py-2 rounded-xl text-slate-600 hover:text-slate-900 font-medium text-sm transition">
+            <i data-lucide="users" class="w-4 h-4"></i>
+            <span>Keluarga</span>
+          </button>
+        </div>
+
+        <!-- Active Family Group Dropdown & Period Filter -->
+        <div class="flex items-center gap-2.5">
+          <!-- Group Selector (Shown when Family Scope is active) -->
+          <div class="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 text-xs sm:text-sm font-medium">
+            <i data-lucide="home" class="w-4 h-4 text-blue-600"></i>
+            <span>Keluarga Utama</span>
+            <span class="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-semibold">Owner</span>
+            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+          </div>
+
+          <!-- Period Filter -->
+          <button class="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-7
