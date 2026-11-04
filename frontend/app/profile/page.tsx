@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import {
@@ -17,6 +18,7 @@ import {
 
 export default function ProfilePage() {
   const { user, refreshUser, logout } = useAuth();
+  const toast = useToast();
 
   // Profile update
   const [name, setName] = useState(user?.name || "");
@@ -36,6 +38,18 @@ export default function ProfilePage() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ text: string; isError: boolean } | null>(null);
 
+  const handleLogout = async () => {
+    const confirmed = await toast.confirm({
+      title: "Keluar Akun?",
+      message: "Apakah Anda yakin ingin keluar dari akun SakuKu?",
+      confirmText: "Ya, Keluar",
+      cancelText: "Batal",
+      type: "danger",
+    });
+    if (!confirmed) return;
+    logout();
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileMsg(null);
@@ -44,8 +58,11 @@ export default function ProfilePage() {
       await api.updateMe({ name: name.trim() });
       await refreshUser();
       setProfileMsg({ text: "Profil berhasil diperbarui!", isError: false });
+      toast.success("Profil Anda berhasil diperbarui!", "PROFIL DISIMPAN");
     } catch (err: any) {
-      setProfileMsg({ text: err.message || "Gagal memperbarui profil.", isError: true });
+      const msg = err.message || "Gagal memperbarui profil.";
+      setProfileMsg({ text: msg, isError: true });
+      toast.error(msg, "GAGAL UPDATE");
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -56,12 +73,16 @@ export default function ProfilePage() {
     setPasswordMsg(null);
 
     if (newPassword !== confirmPassword) {
-      setPasswordMsg({ text: "Konfirmasi kata sandi baru tidak cocok.", isError: true });
+      const msg = "Konfirmasi kata sandi baru tidak cocok.";
+      setPasswordMsg({ text: msg, isError: true });
+      toast.error(msg, "VALIDASI GAGAL");
       return;
     }
 
     if (newPassword.length < 8) {
-      setPasswordMsg({ text: "Kata sandi baru minimal 8 karakter.", isError: true });
+      const msg = "Kata sandi baru minimal 8 karakter.";
+      setPasswordMsg({ text: msg, isError: true });
+      toast.error(msg, "VALIDASI GAGAL");
       return;
     }
 
@@ -75,8 +96,11 @@ export default function ProfilePage() {
       setNewPassword("");
       setConfirmPassword("");
       setPasswordMsg({ text: "Kata sandi berhasil diubah!", isError: false });
+      toast.success("Kata sandi berhasil diubah!", "KATA SANDI DIPERBARUI");
     } catch (err: any) {
-      setPasswordMsg({ text: err.message || "Gagal mengubah kata sandi.", isError: true });
+      const msg = err.message || "Gagal mengubah kata sandi.";
+      setPasswordMsg({ text: msg, isError: true });
+      toast.error(msg, "GAGAL UBAH SANDI");
     } finally {
       setIsChangingPassword(false);
     }
@@ -96,7 +120,7 @@ export default function ProfilePage() {
         </div>
 
         <button
-          onClick={logout}
+          onClick={handleLogout}
           className="bg-rose-100/90 hover:bg-rose-200 text-rose-950 text-xs sm:text-sm font-black px-4 py-2.5 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5 transition-all"
         >
           <LogOut className="w-4 h-4 stroke-[2.5]" />

@@ -33,9 +33,12 @@ import {
 } from "lucide-react";
 
 export default function TransactionsPage() {
-  const { activeScope, selectedGroup } = useAuth();
+  const { activeScope, selectedGroup, userGroups } = useAuth();
   const { openTransactionModal } = useModal();
   const toast = useToast();
+
+  const activeGroup = userGroups.find((g) => g.id === selectedGroup?.id) || selectedGroup;
+  const isOwnerOrAdmin = activeGroup?.user_role === "owner" || activeGroup?.user_role === "admin";
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -156,48 +159,73 @@ export default function TransactionsPage() {
     fetchTransactions();
   }, [fetchTransactions]);
 
+  // Auto-refresh when transaction added/modified
+  useEffect(() => {
+    const handleRefresh = () => fetchTransactions();
+    window.addEventListener("refresh-data", handleRefresh);
+    return () => window.removeEventListener("refresh-data", handleRefresh);
+  }, [fetchTransactions]);
+
   const handleSettleReimburse = async (tx: Transaction) => {
     if (!selectedGroup) return;
-    const r = parseReimburseStatus(tx.notes);
-    if (!r.canReimburse) {
-      toast.error("Transaksi ini dicatat tanpa nota sehingga tidak bisa direimburse.", "Syarat Tidak Terpenuhi");
+    if (!isOwnerOrAdmin) {
+      toast.error("Hanya Bendahara atau Ketua (Owner/Admin) yang berhak mencairkan reimbursement.", "AKSES DITOLAK");
       return;
     }
-    const confirmSettle = confirm(
-      `Tandai nota "${tx.description || "Talangan"}" sebesar ${formatRupiah(tx.amount)} sebagai SUDAH DIREIMBURSE?`
-    );
-    if (!confirmSettle) return;
+    const r = parseReimburseStatus(tx.notes);
+    if (!r.canReimburse) {
+      toast.error("Transaksi ini dicatat tanpa nota sehingga tidak bisa direimburse.", "SYARAT TIDAK TERPENUHI");
+      return;
+    }
+
+    const descLabel = tx.description ? ` (${tx.description})` : "";
+    const confirmed = await toast.confirm({
+      title: "Cairkan Reimburse?",
+      message: `Cairkan ${formatRupiah(tx.amount)}${descLabel} dari kas event?`,
+      confirmText: "Ya, Cairkan",
+      cancelText: "Batal",
+      type: "success",
+    });
+    if (!confirmed) return;
 
     setSettlingTxId(tx.id);
     try {
       const settledNote = encodeReimburseNotes("settled", tx.notes);
       await api.updateGroupTransaction(selectedGroup.id, tx.id, { notes: settledNote });
       toast.success(
-        `Nota ${tx.description || "Talangan"} (${formatRupiah(tx.amount)}) berhasil direimburse!`,
-        "Reimburse Selesai"
+        `Reimburse ${formatRupiah(tx.amount)} berhasil dicairkan!`,
+        "REIMBURSE SELESAI"
       );
       fetchTransactions();
       window.dispatchEvent(new CustomEvent("refresh-data"));
     } catch (err: any) {
-      toast.error(err.message || "Gagal mengubah status reimbursement.", "Gagal");
+      toast.error(err.message || "Gagal mengubah status reimbursement.", "GAGAL MEMPROSES");
     } finally {
       setSettlingTxId(null);
     }
   };
 
   const handleDelete = async (txId: string) => {
-    if (!confirm("Apakah Anda yakin ingin menghapus transaksi ini?")) return;
+    const confirmed = await toast.confirm({
+      title: "Hapus Transaksi?",
+      message: "Apakah Anda yakin ingin menghapus transaksi ini? Tindakan ini tidak dapat dibatalkan.",
+      confirmText: "Ya, Hapus",
+      cancelText: "Batal",
+      type: "danger",
+    });
+    if (!confirmed) return;
+
     try {
       if (activeScope === "personal") {
         await api.deleteTransaction(txId);
       } else if (selectedGroup) {
         await api.deleteGroupTransaction(selectedGroup.id, txId);
       }
-      toast.info("Transaksi berhasil dihapus.", "Terhapus");
+      toast.info("Transaksi berhasil dihapus dari pembukuan.", "TRANSAKSI DIHAPUS");
       fetchTransactions();
       window.dispatchEvent(new CustomEvent("refresh-data"));
     } catch (err: any) {
-      toast.error(err.message || "Gagal menghapus transaksi.", "Gagal");
+      toast.error(err.message || "Gagal menghapus transaksi.", "GAGAL MENGHAPUS");
     }
   };
 
@@ -489,13 +517,13 @@ export default function TransactionsPage() {
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                    {/* Reimburse Settle Action Button */}
-                    {isGroupScope && reimburse.isPending && (
+                    {/* Reimburse Settle Action Button (Bendahara/Ketua Only) */}
+                    {isGroupScope && reimburse.isPending && isOwnerOrAdmin && (
                       <button
                         onClick={() => handleSettleReimburse(tx)}
                         disabled={settlingTxId === tx.id}
                         className="bg-neo-green hover:bg-emerald-400 text-black font-black text-xs px-2.5 py-1.5 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1 transition-all disabled:opacity-50"
-                        title="Tandai nota ini sudah diganti/direimburse"
+                        title="Tandai nota ini sudah diganti/direimburse dari kas event"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
                         <span>{settlingTxId === tx.id ? "..." : "Reimburse"}</span>

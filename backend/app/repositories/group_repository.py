@@ -180,13 +180,13 @@ class GroupRepository:
     @staticmethod
     def get_active_invitations_for_group(db: Session, group_id: str) -> List[GroupInvitation]:
         """Fetch active invitations for a group."""
-        now = datetime.now(timezone.utc)
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         stmt = (
             select(GroupInvitation)
             .where(
                 GroupInvitation.group_id == group_id,
                 GroupInvitation.is_revoked.is_(False),
-                GroupInvitation.expires_at > now,
+                GroupInvitation.expires_at > now_naive,
                 GroupInvitation.uses_count < GroupInvitation.max_uses,
             )
             .order_by(GroupInvitation.created_at.desc())

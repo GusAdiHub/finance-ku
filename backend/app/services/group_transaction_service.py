@@ -189,6 +189,22 @@ class GroupTransactionService:
                 detail="Regular members can only modify transactions they recorded.",
             )
 
+        # Protection: settled transactions cannot be modified by regular members
+        if role == "member" and tx.notes and "[REIMBURSED]" in tx.notes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Transaksi yang sudah dicairkan/direimburse tidak dapat diubah oleh anggota biasa.",
+            )
+
+        # Protection: only owner or admin can approve / settle reimbursement
+        if request.notes is not None and "[REIMBURSED]" in request.notes:
+            old_notes = tx.notes or ""
+            if "[REIMBURSED]" not in old_notes and role not in ("owner", "admin"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Hanya Bendahara atau Ketua (Owner/Admin) yang berhak mencairkan dan menyetujui reimbursement kas event.",
+                )
+
         target_type = request.type if request.type is not None else tx.type
 
         if request.category_id is not None:
@@ -236,6 +252,12 @@ class GroupTransactionService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Regular members can only delete transactions they recorded.",
+            )
+
+        if role == "member" and tx.notes and "[REIMBURSED]" in tx.notes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Transaksi yang sudah dicairkan/direimburse tidak dapat dihapus oleh anggota biasa. Hubungi bendahara.",
             )
 
         TransactionRepository.delete(db, tx)

@@ -2,10 +2,12 @@
 
 import React, { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { useToast } from "@/lib/toast-context";
 import { Category } from "@/lib/types";
 import { Tag, Plus, Trash2, Lock, AlertCircle, Check } from "lucide-react";
 
 export default function CategoriesPage() {
+  const toast = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [typeFilter, setTypeFilter] = useState<"expense" | "income">("expense");
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -44,10 +46,12 @@ export default function CategoriesPage() {
       });
       setIsAdding(false);
       setNewName("");
-      setMessage({ text: "Kategori baru berhasil ditambahkan!", isError: false });
+      toast.success("Kategori baru berhasil ditambahkan!", "KATEGORI DIBUAT");
       fetchCategories();
     } catch (err: any) {
-      setMessage({ text: err.message || "Gagal membuat kategori.", isError: true });
+      const msg = err.message || "Gagal membuat kategori.";
+      setMessage({ text: msg, isError: true });
+      toast.error(msg, "GAGAL MEMBUAT");
     } finally {
       setIsSubmitting(false);
     }
@@ -55,17 +59,26 @@ export default function CategoriesPage() {
 
   const handleDeleteCategory = async (cat: Category) => {
     if (cat.is_system) {
-      alert("Kategori bawaan sistem tidak dapat dihapus.");
+      toast.error("Kategori bawaan sistem dilindungi dan tidak dapat dihapus.", "AKSES DITOLAK");
       return;
     }
-    if (!confirm(`Hapus kategori "${cat.name}"?`)) return;
+
+    const confirmed = await toast.confirm({
+      title: "Hapus Kategori?",
+      message: `Hapus kategori "${cat.name}"? Transaksi yang sudah tercatat sebelumnya tetap tersimpan di database.`,
+      confirmText: "Hapus",
+      cancelText: "Batal",
+      type: "danger",
+    });
+    if (!confirmed) return;
 
     try {
       await api.deleteCategory(cat.id);
-      setMessage({ text: "Kategori berhasil dihapus.", isError: false });
+      toast.info(`Kategori "${cat.name}" berhasil dihapus.`, "KATEGORI DIHAPUS");
       fetchCategories();
     } catch (err: any) {
-      setMessage({ text: err.message || "Gagal menghapus kategori.", isError: true });
+      const msg = err.message || "Gagal menghapus kategori.";
+      toast.error(msg, "GAGAL MENGHAPUS");
     }
   };
 

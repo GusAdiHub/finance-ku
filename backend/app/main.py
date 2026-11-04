@@ -1,9 +1,13 @@
 """Main FastAPI application entrypoint."""
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.api import api_router
 from app.core.config import settings
+
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -22,6 +26,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all unhandled exception handler to ensure valid CORS response."""
+    logger.exception(f"Unhandled server error on {request.method} {request.url}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Terjadi kesalahan server: {str(exc)}"},
+    )
+
 
 # Register API routers
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModal } from "@/lib/modal-context";
 import { useAuth } from "@/lib/auth-context";
-import { useToast } from "@/lib/toast-context";
+import { useToast, showNeoToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
 import { Category, TransactionItem } from "@/lib/types";
 import { formatRupiah, encodeReimburseNotes, encodeReceiptAndReimburseNotes } from "@/lib/utils";
@@ -78,11 +78,13 @@ export function TransactionModal() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isSaveSuccess, setIsSaveSuccess] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Sync state when modal opens
   useEffect(() => {
     if (isOpen) {
+      setIsSaveSuccess(false);
       setType(options.type || "expense");
       setMethod(options.inputMethod || "manual");
       setTargetScope(activeScope);
@@ -456,17 +458,23 @@ export function TransactionModal() {
 
     const parsedAmount = parseFloat(amount.replace(/[^\d]/g, ""));
     if (!parsedAmount || parsedAmount <= 0) {
-      setErrorMessage("Nominal transaksi harus lebih dari 0.");
+      const msg = "Nominal transaksi harus lebih dari 0.";
+      setErrorMessage(msg);
+      showNeoToast(msg, "error", "NOMINAL TIDAK VALID");
       return;
     }
 
     if (!categoryId) {
-      setErrorMessage("Silakan pilih kategori.");
+      const msg = "Silakan pilih kategori transaksi.";
+      setErrorMessage(msg);
+      showNeoToast(msg, "warning", "PILIH KATEGORI");
       return;
     }
 
     if (targetScope === "family" && !targetGroupId) {
-      setErrorMessage("Silakan pilih grup keluarga.");
+      const msg = "Silakan pilih grup kas event tujuan.";
+      setErrorMessage(msg);
+      showNeoToast(msg, "warning", "PILIH GRUP EVENT");
       return;
     }
 
@@ -503,6 +511,9 @@ export function TransactionModal() {
         }
       }
 
+      let successMessage = "";
+      let successTitle = "TRANSAKSI TERSIMPAN";
+
       if (method === "ocr" && receiptId) {
         // Construct clear description with manual merchant name
         const finalDescription = description.trim()
@@ -532,10 +543,8 @@ export function TransactionModal() {
           items: extractedItems.length > 0 ? extractedItems : undefined,
         });
 
-        toastSuccess(
-          `Struk belanja ${formatRupiah(parsedAmount)} berhasil dicatat!`,
-          "Struk Tersimpan"
-        );
+        successMessage = `Struk belanja ${formatRupiah(parsedAmount)} berhasil dicatat!`;
+        successTitle = "STRUK TERSIMPAN";
       } else {
         // Standard personal or group transaction creation
         const finalDescription = description.trim()
@@ -568,21 +577,27 @@ export function TransactionModal() {
           await api.createGroupTransaction(targetGroupId, payload);
         }
 
-        toastSuccess(
-          `${type === "expense" ? "Pengeluaran" : "Pemasukan"} ${formatRupiah(parsedAmount)} berhasil disimpan!`,
-          "Transaksi Disimpan"
-        );
+        successMessage = `${type === "expense" ? "Pengeluaran" : "Pemasukan"} ${formatRupiah(parsedAmount)} berhasil dicatat!`;
+        successTitle = "TRANSAKSI TERSIMPAN";
       }
 
-      if (options.onSuccess) {
-        options.onSuccess();
-      }
-      closeTransactionModal();
-      window.dispatchEvent(new CustomEvent("refresh-data"));
+      setIsSaveSuccess(true);
+      toastSuccess(successMessage, successTitle);
+      showNeoToast(successMessage, "success", successTitle);
+
+      setTimeout(() => {
+        closeTransactionModal();
+        setIsSaveSuccess(false);
+        if (options.onSuccess) {
+          options.onSuccess();
+        }
+        window.dispatchEvent(new CustomEvent("refresh-data"));
+      }, 350);
     } catch (err: any) {
       const msg = err.message || "Gagal menyimpan transaksi.";
       setErrorMessage(msg);
-      toastError(msg);
+      toastError(msg, "GAGAL MENYIMPAN");
+      showNeoToast(msg, "error", "GAGAL MENYIMPAN");
     } finally {
       setIsSubmitting(false);
     }
@@ -1560,14 +1575,20 @@ export function TransactionModal() {
           <div className="pt-2">
             <button
               type="submit"
-              disabled={isSubmitting || isScanningOCR || isParsingVoice}
-              className={`w-full bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black rounded-xl py-3.5 px-4 flex items-center justify-center gap-2 border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all text-sm ${
-                isSubmitting || isScanningOCR || isParsingVoice ? "opacity-70 cursor-not-allowed" : ""
+              disabled={isSubmitting || isScanningOCR || isParsingVoice || isSaveSuccess}
+              className={`w-full ${
+                isSaveSuccess
+                  ? "bg-[#4ADE80] text-black"
+                  : "bg-neo-yellow hover:bg-[#FDE047] text-black"
+              } active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] font-black rounded-xl py-3.5 px-4 flex items-center justify-center gap-2 border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all text-sm ${
+                (isSubmitting || isScanningOCR || isParsingVoice) && !isSaveSuccess ? "opacity-70 cursor-not-allowed" : ""
               }`}
             >
               <Check className="w-5 h-5 stroke-[3]" />
               <span>
-                {isSubmitting
+                {isSaveSuccess
+                  ? "✓ Transaksi Berhasil Disimpan!"
+                  : isSubmitting
                   ? "Menyimpan Transaksi..."
                   : method === "ocr" && receiptId
                   ? "Konfirmasi & Simpan Transaksi Struk"

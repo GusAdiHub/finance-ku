@@ -369,8 +369,8 @@ class GroupService:
         raw_code = "".join(secrets.choice(alphabet) for _ in range(8))
         code_hash = hashlib.sha256(raw_code.encode("utf-8")).hexdigest()
 
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(days=request.expires_in_days)
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires_at = now_naive + timedelta(days=request.expires_in_days)
 
         invitation = GroupInvitation(
             group_id=group_id,
@@ -438,17 +438,37 @@ class GroupService:
         code_hash = hashlib.sha256(clean_code.encode("utf-8")).hexdigest()
 
         invitation = GroupRepository.get_invitation_by_code_hash(db, code_hash)
-        now = datetime.now(timezone.utc)
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        if (
-            not invitation
-            or invitation.is_revoked
-            or invitation.expires_at <= now
-            or invitation.uses_count >= invitation.max_uses
-        ):
+        is_expired = False
+        if invitation and invitation.expires_at:
+            exp = invitation.expires_at
+            if exp.tzinfo is not None:
+                exp = exp.replace(tzinfo=None)
+            is_expired = exp <= now_naive
+
+        if not invitation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Kode undangan tidak ditemukan. Periksa kembali 8 karakter kode undangan.",
+            )
+
+        if invitation.is_revoked:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid, expired, or fully utilized invitation code.",
+                detail="Kode undangan ini sudah dinonaktifkan oleh admin.",
+            )
+
+        if is_expired:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kode undangan ini sudah kedaluwarsa. Minta admin membuat kode baru.",
+            )
+
+        if invitation.uses_count >= invitation.max_uses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kode undangan ini sudah mencapai batas kuota maksimal penggunaan (5 anggota).",
             )
 
         # Check existing membership
@@ -462,14 +482,14 @@ class GroupService:
         if existing_membership and existing_membership.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You are already an active member of this group.",
+                detail="Anda sudah terdaftar sebagai anggota aktif di grup kas event ini.",
             )
 
         if existing_membership:
             # Reactivate membership
             existing_membership.is_active = True
             existing_membership.role = "member"
-            existing_membership.joined_at = now
+            existing_membership.joined_at = now_naive
             GroupRepository.update_member(db, existing_membership)
         else:
             # Create new membership

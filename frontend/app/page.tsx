@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useModal } from "@/lib/modal-context";
+import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
 import { PersonalDashboard, GroupDashboard, Transaction } from "@/lib/types";
 import {
@@ -36,6 +37,7 @@ import {
   AlertTriangle,
   X,
   Check,
+  KeyRound,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -47,9 +49,11 @@ export default function DashboardPage() {
     isLoading: authLoading,
     activeScope,
     selectedGroup,
+    userGroups,
     refreshGroups,
   } = useAuth();
   const { openTransactionModal } = useModal();
+  const toast = useToast();
 
   const [dashboardData, setDashboardData] = useState<PersonalDashboard | GroupDashboard | null>(null);
   const [groupTransactions, setGroupTransactions] = useState<Transaction[]>([]);
@@ -63,6 +67,44 @@ export default function DashboardPage() {
 
   // Reimburse processing state
   const [processingTxId, setProcessingTxId] = useState<string | null>(null);
+
+  // Group invite code on dashboard
+  const [dashboardInviteCode, setDashboardInviteCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedGroup) {
+      try {
+        const saved = localStorage.getItem(`sakuku_invite_${selectedGroup.id}`);
+        setDashboardInviteCode(saved || null);
+      } catch {}
+    } else {
+      setDashboardInviteCode(null);
+    }
+  }, [selectedGroup]);
+
+  const handleShareGroupCode = async () => {
+    if (!selectedGroup) return;
+    try {
+      let code = dashboardInviteCode;
+      if (!code) {
+        const saved = typeof window !== "undefined" ? localStorage.getItem(`sakuku_invite_${selectedGroup.id}`) : null;
+        if (saved) {
+          code = saved;
+        } else {
+          const res = await api.createInvitation(selectedGroup.id);
+          code = res.code;
+          if (typeof window !== "undefined") {
+            localStorage.setItem(`sakuku_invite_${selectedGroup.id}`, res.code);
+          }
+        }
+        setDashboardInviteCode(code);
+      }
+      navigator.clipboard.writeText(code);
+      toast.success(`Kode kas "${code}" berhasil disalin ke clipboard!`, "KODE DISALIN");
+    } catch (err: any) {
+      toast.error(err.message || "Gagal membuat kode undangan.", "GAGAL MEMBUAT KODE");
+    }
+  };
 
   const fetchDashboard = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -112,21 +154,35 @@ export default function DashboardPage() {
     return () => window.removeEventListener("refresh-data", handleRefresh);
   }, [fetchDashboard]);
 
-  // Settle reimbursement handler
+  // Settle reimbursement handler (Owner/Admin only)
   const handleSettleReimburse = async (tx: Transaction) => {
     if (!selectedGroup) return;
-    const confirmSettle = confirm(
-      `Tandai nota "${tx.description || "Talangan"}" sebesar ${formatRupiah(tx.amount)} sebagai SUDAH DIREIMBURSE?`
-    );
-    if (!confirmSettle) return;
+    const currentGrp = userGroups.find((g) => g.id === selectedGroup.id) || selectedGroup;
+    if (currentGrp.user_role !== "owner" && currentGrp.user_role !== "admin") {
+      toast.error("Hanya Bendahara atau Ketua (Owner/Admin) yang berhak mencairkan reimbursement.", "AKSES DITOLAK");
+      return;
+    }
+    const descLabel = tx.description ? ` (${tx.description})` : "";
+    const confirmed = await toast.confirm({
+      title: "Cairkan Reimburse?",
+      message: `Cairkan ${formatRupiah(tx.amount)}${descLabel} dari kas event?`,
+      confirmText: "Ya, Cairkan",
+      cancelText: "Batal",
+      type: "success",
+    });
+    if (!confirmed) return;
 
     setProcessingTxId(tx.id);
     try {
       const settledNote = encodeReimburseNotes("settled", tx.notes);
       await api.updateGroupTransaction(selectedGroup.id, tx.id, { notes: settledNote });
+      toast.success(
+        `Reimburse ${formatRupiah(tx.amount)} berhasil dicairkan!`,
+        "REIMBURSE SELESAI"
+      );
       await fetchDashboard();
     } catch (err: any) {
-      alert(err.message || "Gagal mengubah status reimbursement.");
+      toast.error(err.message || "Gagal mengubah status reimbursement.", "GAGAL MEMPROSES");
     } finally {
       setProcessingTxId(null);
     }
@@ -145,8 +201,9 @@ export default function DashboardPage() {
       await refreshGroups();
       await fetchDashboard();
       setIsEditingBudget(false);
+      toast.success("Pagu anggaran kas event berhasil diperbarui!", "ANGGARAN DISIMPAN");
     } catch (err: any) {
-      alert(err.message || "Gagal memperbarui pagu anggaran event.");
+      toast.error(err.message || "Gagal memperbarui pagu anggaran event.", "GAGAL MENYIMPAN");
     } finally {
       setIsSavingBudget(false);
     }
@@ -168,6 +225,8 @@ export default function DashboardPage() {
 
   const isFamily = activeScope === "family";
   const groupDashboard = isFamily ? (dashboardData as GroupDashboard) : null;
+  const activeGroup = userGroups.find((g) => g.id === selectedGroup?.id) || selectedGroup;
+  const isOwnerOrAdmin = activeGroup?.user_role === "owner" || activeGroup?.user_role === "admin";
 
   // Event Budget Calculations
   const eventBudget = isFamily ? parseGroupBudget(selectedGroup?.description) : null;
@@ -198,7 +257,7 @@ export default function DashboardPage() {
       {/* Scope Notice Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-xl p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000]">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span
               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_#000] ${
                 isFamily ? "bg-neo-yellow text-black" : "bg-neo-yellow text-black"
@@ -213,6 +272,17 @@ export default function DashboardPage() {
                 {isFamily ? `KAS EVENT / TIM: ${selectedGroup?.name || "Event"}` : "BUKU PRIBADI"}
               </span>
             </span>
+
+            {isFamily && selectedGroup && (
+              <button
+                onClick={handleShareGroupCode}
+                className="inline-flex items-center gap-1.5 bg-purple-100 hover:bg-purple-200 text-black px-2.5 py-1 rounded-lg text-xs font-black border-2 border-black shadow-[1.5px_1.5px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                title="Salin kode grup kas event ini untuk dibagikan"
+              >
+                <KeyRound className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{dashboardInviteCode ? `Kode: ${dashboardInviteCode}` : "🔑 Salin Kode Kas"}</span>
+              </button>
+            )}
           </div>
           <h1 className="font-black text-black mt-2 tracking-tight text-xl sm:text-2xl">
             {isFamily
@@ -402,7 +472,9 @@ export default function DashboardPage() {
                   )}
                 </h3>
                 <p className="text-xs font-semibold text-slate-600">
-                  Pantau bukti nota yang ditalangi anggota dan selesaikan penggantian uangnya secara transparan.
+                  {isOwnerOrAdmin
+                    ? "Pantau bukti nota yang ditalangi anggota dan selesaikan pencairan uang talangan dari kas event."
+                    : "Daftar nota belanja yang diajukan untuk reimburse. Pencairan uang kas dilakukan oleh Bendahara / Ketua panitia."}
                 </p>
               </div>
             </div>
@@ -459,17 +531,26 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      {/* Action Button: Settle Reimbursement */}
-                      <button
-                        onClick={() => handleSettleReimburse(tx)}
-                        disabled={processingTxId === tx.id}
-                        className="w-full bg-neo-green hover:bg-emerald-400 text-black font-black text-xs py-2 px-3 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
-                      >
-                        <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                        <span>
-                          {processingTxId === tx.id ? "Memproses..." : "Tandai Sudah Direimburse"}
-                        </span>
-                      </button>
+                      {/* Action Button: Settle Reimbursement (Owner / Admin Only) */}
+                      {isOwnerOrAdmin ? (
+                        <button
+                          onClick={() => handleSettleReimburse(tx)}
+                          disabled={processingTxId === tx.id}
+                          className="w-full bg-neo-green hover:bg-emerald-400 text-black font-black text-xs py-2 px-3 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                          <span>
+                            {processingTxId === tx.id ? "Memproses..." : "Cairkan Reimburse (Bendahara)"}
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="w-full bg-amber-100/80 border border-black/30 rounded-xl py-1.5 px-2.5 text-center">
+                          <p className="text-[11px] font-black text-amber-950 flex items-center justify-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 stroke-[2.5] text-amber-800" />
+                            <span>Menunggu pencairan oleh Bendahara / Ketua</span>
+                          </p>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

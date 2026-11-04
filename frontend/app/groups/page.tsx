@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
 import { Group, GroupMember } from "@/lib/types";
 import {
@@ -31,6 +32,7 @@ import {
 
 export default function GroupsPage() {
   const { user, userGroups, selectedGroup, setSelectedGroup, refreshGroups } = useAuth();
+  const toast = useToast();
 
   const [activeGroupId, setActiveGroupId] = useState<string>(selectedGroup?.id || "");
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -55,6 +57,7 @@ export default function GroupsPage() {
   const [isDeletingGroup, setIsDeletingGroup] = useState<boolean>(false);
 
   const [isJoiningGroup, setIsJoiningGroup] = useState<boolean>(false);
+  const [isSubmittingJoin, setIsSubmittingJoin] = useState<boolean>(false);
   const [joinCode, setJoinCode] = useState<string>("");
 
   const [generatedInviteCode, setGeneratedInviteCode] = useState<string | null>(null);
@@ -73,8 +76,30 @@ export default function GroupsPage() {
   useEffect(() => {
     if (activeGroupId) {
       loadMembers(activeGroupId);
+      try {
+        const savedCode = localStorage.getItem(`sakuku_invite_${activeGroupId}`);
+        if (savedCode) {
+          setGeneratedInviteCode(savedCode);
+        } else {
+          // Auto-generate code if user is owner/admin so a shareable code is always ready
+          const grp = userGroups.find((g) => g.id === activeGroupId);
+          if (grp && (grp.user_role === "owner" || grp.user_role === "admin")) {
+            api
+              .createInvitation(activeGroupId)
+              .then((res) => {
+                setGeneratedInviteCode(res.code);
+                try {
+                  localStorage.setItem(`sakuku_invite_${activeGroupId}`, res.code);
+                } catch {}
+              })
+              .catch(() => {});
+          } else {
+            setGeneratedInviteCode(null);
+          }
+        }
+      } catch {}
     }
-  }, [activeGroupId]);
+  }, [activeGroupId, userGroups]);
 
   const loadMembers = async (grpId: string) => {
     setIsLoadingMembers(true);
@@ -109,9 +134,12 @@ export default function GroupsPage() {
       setNewGroupName("");
       setNewGroupBudget("");
       setNewGroupDesc("");
+      toast.success("Grup Kas Event / Tim berhasil dibuat!", "GRUP DIBUAT");
       setActionSuccess("Grup Kas Event / Tim berhasil dibuat!");
     } catch (err: any) {
-      setActionError(err.message || "Gagal membuat grup kas event.");
+      const msg = err.message || "Gagal membuat grup kas event.";
+      setActionError(msg);
+      toast.error(msg, "GAGAL MEMBUAT");
     }
   };
 
@@ -128,9 +156,12 @@ export default function GroupsPage() {
       await api.updateGroup(curr.id, { description: updatedDesc });
       await refreshGroups();
       setIsEditingBudget(false);
+      toast.success("Pagu anggaran kas event berhasil diperbarui!", "ANGGARAN DISIMPAN");
       setActionSuccess("Pagu anggaran event berhasil diperbarui!");
     } catch (err: any) {
-      setActionError(err.message || "Gagal memperbarui pagu anggaran.");
+      const msg = err.message || "Gagal memperbarui pagu anggaran.";
+      setActionError(msg);
+      toast.error(msg, "GAGAL MEMPERBARUI");
     } finally {
       setIsSavingBudget(false);
     }
@@ -138,6 +169,8 @@ export default function GroupsPage() {
 
   const handleJoinGroup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!joinCode.trim()) return;
+    setIsSubmittingJoin(true);
     setActionError(null);
     try {
       const res = await api.joinGroup(joinCode.trim().toUpperCase());
@@ -146,9 +179,14 @@ export default function GroupsPage() {
       setSelectedGroup(res);
       setIsJoiningGroup(false);
       setJoinCode("");
+      toast.success("Berhasil bergabung ke grup kas event!", "BERGABUNG BERHASIL");
       setActionSuccess("Berhasil bergabung ke grup kas event!");
     } catch (err: any) {
-      setActionError(err.message || "Gagal bergabung dengan kode tersebut.");
+      const msg = err.message || "Gagal bergabung dengan kode tersebut.";
+      setActionError(msg);
+      toast.error(msg, "KODE TIDAK VALID");
+    } finally {
+      setIsSubmittingJoin(false);
     }
   };
 
@@ -158,25 +196,43 @@ export default function GroupsPage() {
     try {
       const res = await api.createInvitation(activeGroupId);
       setGeneratedInviteCode(res.code);
+      try {
+        localStorage.setItem(`sakuku_invite_${activeGroupId}`, res.code);
+      } catch {}
+      toast.success(`Kode undangan baru: ${res.code}`, "KODE BERHASIL DIBUAT");
     } catch (err: any) {
-      setActionError(err.message || "Gagal membuat kode undangan.");
+      const msg = err.message || "Gagal membuat kode undangan.";
+      setActionError(msg);
+      toast.error(msg, "GAGAL MEMBUAT KODE");
     }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setIsCopied(true);
+    toast.success("Kode undangan berhasil disalin ke clipboard!", "KODE DISALIN");
     setTimeout(() => setIsCopied(false), 2000);
   };
 
   const handleLeaveGroup = async () => {
-    if (!confirm("Apakah Anda yakin ingin keluar dari grup kas event ini?")) return;
+    const confirmed = await toast.confirm({
+      title: "Keluar dari Kas Event?",
+      message: "Apakah Anda yakin ingin keluar dari grup kas event ini? Anda tidak akan dapat melihat pembukuan kas ini lagi sampai diundang kembali.",
+      confirmText: "Ya, Keluar",
+      cancelText: "Batal",
+      type: "danger",
+    });
+    if (!confirmed) return;
+
     try {
       await api.leaveGroup(activeGroupId);
       await refreshGroups();
+      toast.info("Anda telah keluar dari grup kas event.", "KELUAR GRUP");
       setActionSuccess("Anda telah keluar dari grup.");
     } catch (err: any) {
-      setActionError(err.message || "Gagal keluar dari grup.");
+      const msg = err.message || "Gagal keluar dari grup.";
+      setActionError(msg);
+      toast.error(msg, "GAGAL KELUAR");
     }
   };
 
@@ -379,11 +435,12 @@ export default function GroupsPage() {
                       </button>
                     )}
                     <button
-                      onClick={handleCreateInvite}
+                      onClick={generatedInviteCode ? () => copyToClipboard(generatedInviteCode) : handleCreateInvite}
                       className="bg-purple-100 hover:bg-purple-200 text-black border-2 border-black text-xs font-black px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                      title="Salin atau buat kode undangan kas event"
                     >
-                      <Share2 className="w-4 h-4 stroke-[2.5]" />
-                      <span>Undangan</span>
+                      <KeyRound className="w-4 h-4 stroke-[2.5]" />
+                      <span>{generatedInviteCode ? `Kode: ${generatedInviteCode}` : "🔑 Kode Undangan"}</span>
                     </button>
                     {isOwner ? (
                       <button
@@ -432,25 +489,66 @@ export default function GroupsPage() {
                   </button>
                 </div>
 
-                {/* Generated Invite Code Banner */}
-                {generatedInviteCode && (
-                  <div className="p-4 bg-purple-100 border-2 border-black rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[3px_3px_0px_0px_#000] animate-fade-in">
+                {/* Kode Undangan Kas Event Card (Selalu Tampil) */}
+                {generatedInviteCode ? (
+                  <div className="p-4 bg-purple-100 border-2 border-black rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-[3px_3px_0px_0px_#000] animate-fade-in">
                     <div>
-                      <p className="text-xs font-black text-black">Kode Undangan Baru:</p>
-                      <p className="text-2xl font-mono font-black tracking-widest text-black mt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] sm:text-xs font-black uppercase bg-white px-2 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000] text-black">
+                          🔑 Kode Undangan Kas Event
+                        </span>
+                        <span className="text-[11px] text-slate-700 font-bold">Maks. 5 Anggota • Berlaku 7 Hari</span>
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-mono font-black tracking-widest text-black mt-2 selection:bg-neo-yellow">
                         {generatedInviteCode}
                       </p>
-                      <p className="text-[11px] text-slate-700 font-semibold mt-0.5">
-                        Berlaku selama 7 hari untuk maksimal 5 anggota tim yang ingin bergabung.
+                      <p className="text-[11px] text-slate-700 font-semibold mt-1">
+                        Bagikan kode 8 digit ini ke teman / anggota panitia agar bisa bergabung via tombol <strong>Gabung Grup Kas</strong>.
                       </p>
                     </div>
-                    <button
-                      onClick={() => copyToClipboard(generatedInviteCode)}
-                      className="bg-neo-yellow hover:bg-[#FDE047] text-black text-xs font-black px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all self-start sm:self-auto"
-                    >
-                      {isCopied ? <Check className="w-4 h-4 stroke-[3]" /> : <Copy className="w-4 h-4 stroke-[2.5]" />}
-                      <span>{isCopied ? "Tersalin!" : "Salin Kode"}</span>
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                      <button
+                        onClick={() => copyToClipboard(generatedInviteCode)}
+                        className="bg-neo-yellow hover:bg-[#FDE047] text-black text-xs font-black px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                      >
+                        {isCopied ? <Check className="w-4 h-4 stroke-[3]" /> : <Copy className="w-4 h-4 stroke-[2.5]" />}
+                        <span>{isCopied ? "Tersalin!" : "Salin Kode"}</span>
+                      </button>
+                      {isOwnerOrAdmin && (
+                        <button
+                          onClick={handleCreateInvite}
+                          className="bg-white hover:bg-slate-100 text-black text-xs font-black px-3 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                          title="Buat kode baru jika kode lama kadaluarsa"
+                        >
+                          <span>🔄 Buat Kode Baru</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-purple-50 border-2 border-dashed border-black rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[2px_2px_0px_0px_#000]">
+                    <div>
+                      <p className="text-xs font-black text-black flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 stroke-[2.5] text-purple-700" />
+                        <span>Kode Undangan Kas Event Belum Dibuat</span>
+                      </p>
+                      <p className="text-xs text-slate-700 font-medium mt-1">
+                        Buat kode 8-digit sekali klik untuk mengundang anggota tim / panitia ke kas event ini.
+                      </p>
+                    </div>
+                    {isOwnerOrAdmin ? (
+                      <button
+                        onClick={handleCreateInvite}
+                        className="bg-neo-yellow hover:bg-[#FDE047] text-black text-xs font-black px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all self-start sm:self-auto"
+                      >
+                        <Share2 className="w-4 h-4 stroke-[2.5]" />
+                        <span>🔑 Buat Kode Undangan</span>
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-bold text-slate-500">
+                        Hanya Admin / Pemilik yang dapat membuat kode
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -713,9 +811,10 @@ export default function GroupsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-black bg-neo-yellow hover:bg-[#FDE047] text-black border-2 border-black rounded-xl shadow-[3px_3px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                  disabled={isSubmittingJoin}
+                  className="px-4 py-2 text-xs font-black bg-neo-yellow hover:bg-[#FDE047] disabled:opacity-50 text-black border-2 border-black rounded-xl shadow-[3px_3px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all"
                 >
-                  Gabung Sekarang
+                  {isSubmittingJoin ? "Memproses..." : "Gabung Sekarang"}
                 </button>
               </div>
             </form>
