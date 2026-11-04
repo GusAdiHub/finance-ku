@@ -3,11 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { Category } from "@/lib/types";
-import { useAuth } from "@/lib/auth-context";
 import { Tag, Plus, Trash2, Lock, AlertCircle, Check } from "lucide-react";
 
 export default function CategoriesPage() {
-  const { elderlyMode } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [typeFilter, setTypeFilter] = useState<"expense" | "income">("expense");
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -78,7 +76,7 @@ export default function CategoriesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-xl p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000]">
         <div>
-          <h1 className={`font-black text-black tracking-tight ${elderlyMode ? "text-2xl" : "text-xl sm:text-2xl"}`}>
+          <h1 className="font-black text-black tracking-tight text-xl sm:text-2xl">
             Kelola Kategori Transaksi
           </h1>
           <p className="text-xs sm:text-sm font-semibold text-slate-700 mt-0.5">

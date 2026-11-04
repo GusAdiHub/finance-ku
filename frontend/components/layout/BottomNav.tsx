@@ -10,7 +10,6 @@ import { LayoutDashboard, ReceiptText, Plus, FolderKanban, PieChart } from "luci
 export function BottomNav() {
   const pathname = usePathname();
   const { openTransactionModal } = useModal();
-  const { elderlyMode } = useAuth();
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FFFDF9]/85 backdrop-blur-xl border-t-2 border-black pb-safe pt-1 px-3 shadow-[0_-3px_0px_0px_#000]">
@@ -22,8 +21,8 @@ export function BottomNav() {
             pathname === "/" ? "text-black font-black" : "text-slate-600 hover:text-black font-semibold"
           }`}
         >
-          <LayoutDashboard className={elderlyMode ? "w-6 h-6 stroke-[2.5]" : "w-5 h-5 stroke-[2.5]"} />
-          <span className={`text-[10px] mt-1 ${elderlyMode ? "text-xs font-bold" : ""}`}>Beranda</span>
+          <LayoutDashboard className="w-5 h-5 stroke-[2.5]" />
+          <span className="text-[10px] mt-1">Beranda</span>
         </Link>
 
         {/* Riwayat */}
@@ -33,8 +32,8 @@ export function BottomNav() {
             pathname === "/transactions" ? "text-black font-black" : "text-slate-600 hover:text-black font-semibold"
           }`}
         >
-          <ReceiptText className={elderlyMode ? "w-6 h-6 stroke-[2.5]" : "w-5 h-5 stroke-[2.5]"} />
-          <span className={`text-[10px] mt-1 ${elderlyMode ? "text-xs font-bold" : ""}`}>Riwayat</span>
+          <ReceiptText className="w-5 h-5 stroke-[2.5]" />
+          <span className="text-[10px] mt-1">Riwayat</span>
         </Link>
 
         {/* Center Floating Action Button (+ Catat) */}
@@ -55,8 +54,8 @@ export function BottomNav() {
             pathname === "/groups" ? "text-black font-black" : "text-slate-600 hover:text-black font-semibold"
           }`}
         >
-          <FolderKanban className={elderlyMode ? "w-6 h-6 stroke-[2.5]" : "w-5 h-5 stroke-[2.5]"} />
-          <span className={`text-[10px] mt-1 ${elderlyMode ? "text-xs font-bold" : ""}`}>Kas Event</span>
+          <FolderKanban className="w-5 h-5 stroke-[2.5]" />
+          <span className="text-[10px] mt-1">Kas Event</span>
         </Link>
 
         {/* Laporan */}
@@ -66,8 +65,8 @@ export function BottomNav() {
             pathname === "/reports" ? "text-black font-black" : "text-slate-600 hover:text-black font-semibold"
           }`}
         >
-          <PieChart className={elderlyMode ? "w-6 h-6 stroke-[2.5]" : "w-5 h-5 stroke-[2.5]"} />
-          <span className={`text-[10px] mt-1 ${elderlyMode ? "text-xs font-bold" : ""}`}>Laporan</span>
+          <PieChart className="w-5 h-5 stroke-[2.5]" />
+          <span className="text-[10px] mt-1">Laporan</span>
         </Link>
       </div>
     </nav>

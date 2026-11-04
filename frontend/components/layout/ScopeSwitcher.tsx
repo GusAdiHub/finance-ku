@@ -10,7 +10,7 @@ interface ScopeSwitcherProps {
 }
 
 export function ScopeSwitcher({ compact = false }: ScopeSwitcherProps) {
-  const { activeScope, setActiveScope, selectedGroup, setSelectedGroup, userGroups, elderlyMode } = useAuth();
+  const { activeScope, setActiveScope, selectedGroup, setSelectedGroup, userGroups } = useAuth();
 
   return (
     <div className="flex flex-col gap-2">
@@ -22,10 +22,10 @@ export function ScopeSwitcher({ compact = false }: ScopeSwitcherProps) {
             activeScope === "personal"
               ? "bg-neo-yellow text-black border-2 border-black shadow-[2px_2px_0px_0px_#000]"
               : "text-black hover:bg-slate-100 border-2 border-transparent"
-          } ${elderlyMode ? "text-base py-2.5" : ""}`}
+          }`}
         >
-          <User className={`w-4 h-4 stroke-[2.5] text-black ${elderlyMode ? "w-5 h-5" : ""}`} />
-          <span className="text-black">{elderlyMode ? "Kas Pribadi" : "Pribadi"}</span>
+          <User className="w-4 h-4 stroke-[2.5] text-black" />
+          <span className="text-black">Pribadi</span>
         </button>
 
         <button
@@ -34,10 +34,10 @@ export function ScopeSwitcher({ compact = false }: ScopeSwitcherProps) {
             activeScope === "family"
               ? "bg-neo-yellow text-black border-2 border-black shadow-[2px_2px_0px_0px_#000]"
               : "text-black hover:bg-slate-100 border-2 border-transparent"
-          } ${elderlyMode ? "text-base py-2.5" : ""}`}
+          }`}
         >
-          <FolderKanban className={`w-4 h-4 stroke-[2.5] text-black ${elderlyMode ? "w-5 h-5" : ""}`} />
-          <span className="text-black">{elderlyMode ? "Kas Tim / Event" : "Kas Event & Tim"}</span>
+          <FolderKanban className="w-4 h-4 stroke-[2.5] text-black" />
+          <span className="text-black">Kas Event & Tim</span>
         </button>
       </div>
 
@@ -53,9 +53,7 @@ export function ScopeSwitcher({ compact = false }: ScopeSwitcherProps) {
                   const grp = userGroups.find((g) => g.id === e.target.value);
                   if (grp) setSelectedGroup(grp);
                 }}
-                className={`w-full bg-white border-2 border-black rounded-xl px-3 py-2 text-xs md:text-sm font-bold text-black focus:outline-none shadow-[2px_2px_0px_0px_#000] appearance-none pr-8 cursor-pointer ${
-                  elderlyMode ? "text-base py-3" : ""
-                }`}
+                className="w-full bg-white border-2 border-black rounded-xl px-3 py-2 text-xs md:text-sm font-bold text-black focus:outline-none shadow-[2px_2px_0px_0px_#000] appearance-none pr-8 cursor-pointer"
               >
                 {userGroups.map((g) => (
                   <option key={g.id} value={g.id}>

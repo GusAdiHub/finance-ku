@@ -1,4 +1,5 @@
 """Authentication and user management service layer."""
+import re
 from typing import Set
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -27,20 +28,31 @@ class AuthService:
 
     @classmethod
     def register(cls, db: Session, request: UserRegisterRequest) -> User:
-        """Register a new user account."""
-        normalized_email = request.email.strip().lower()
+        """Register a new user account with username and optional email."""
+        clean_name = request.name.strip()
 
-        # Check for existing user with identical email
-        if UserRepository.exists_by_email(db, normalized_email):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email is already registered.",
-            )
+        if request.email and request.email.strip():
+            normalized_email = request.email.strip().lower()
+            if UserRepository.exists_by_email(db, normalized_email):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email is already registered.",
+                )
+        else:
+            # Generate unique local email from username/name
+            sanitized = re.sub(r"[^a-zA-Z0-9_.-]", "", clean_name.lower()) or "user"
+            candidate_email = f"{sanitized}@sakuku.local"
+            if UserRepository.exists_by_email(db, candidate_email):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username sudah terdaftar. Silakan gunakan username lain.",
+                )
+            normalized_email = candidate_email
 
         # Hash password and create user
         password_hash = get_password_hash(request.password)
         new_user = User(
-            name=request.name.strip(),
+            name=clean_name,
             email=normalized_email,
             password_hash=password_hash,
             is_active=True,
@@ -49,16 +61,15 @@ class AuthService:
         return UserRepository.create(db, new_user)
 
     @classmethod
-    def authenticate(cls, db: Session, email: str, password: str) -> User:
-        """Authenticate user credentials and return User if valid and active."""
-        normalized_email = email.strip().lower()
-        user = UserRepository.get_by_email(db, normalized_email)
+    def authenticate(cls, db: Session, identifier: str, password: str) -> User:
+        """Authenticate user credentials using username or email and return User if valid and active."""
+        user = UserRepository.get_by_identifier(db, identifier)
 
         # Constant-time-like rejection for non-existent users
         if not user or not verify_password(password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password.",
+                detail="Incorrect username, email or password.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 

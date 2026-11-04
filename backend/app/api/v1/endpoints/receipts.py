@@ -1,6 +1,8 @@
 """Receipt management and OCR processing API endpoints."""
+import os
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_active_user
@@ -66,6 +68,29 @@ def get_receipt(
     """Fetch details and OCR breakdown for a specific receipt draft."""
     receipt = ReceiptService.get_receipt(db, receipt_id, current_user.id)
     return ReceiptResponse.model_validate(receipt)
+
+
+@router.get(
+    "/{receipt_id}/file",
+    summary="Download or stream receipt image file",
+)
+def get_receipt_file(
+    receipt_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Securely stream physical receipt image file with authorization validation."""
+    receipt = ReceiptService.get_receipt(db, receipt_id, current_user.id)
+    if not receipt.file_path or not os.path.exists(receipt.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File foto struk tidak ditemukan pada media server.",
+        )
+    return FileResponse(
+        path=receipt.file_path,
+        media_type=receipt.mime_type or "image/jpeg",
+        filename=receipt.file_name,
+    )
 
 
 @router.post(

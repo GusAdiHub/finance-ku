@@ -1,6 +1,6 @@
 """Report service layer for personal financial statements."""
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 from sqlalchemy import select
@@ -25,12 +25,23 @@ class ReportService:
         period_name: str = "custom",
     ) -> PersonalReportResponse:
         """Generate a complete financial report for the user over a time range."""
+        clean_start = (
+            start_date.astimezone(timezone.utc).replace(tzinfo=None)
+            if start_date.tzinfo is not None
+            else start_date
+        )
+        clean_end = (
+            end_date.astimezone(timezone.utc).replace(tzinfo=None)
+            if end_date.tzinfo is not None
+            else end_date
+        )
+
         # 1. Total summary
         summary = TransactionRepository.get_personal_summary(
             db=db,
             user_id=user.id,
-            start_date=start_date,
-            end_date=end_date,
+            start_date=clean_start,
+            end_date=clean_end,
         )
         total_income = summary["total_income"]
         total_expense = summary["total_expense"]
@@ -42,8 +53,8 @@ class ReportService:
             db=db,
             user_id=user.id,
             transaction_type="expense",
-            start_date=start_date,
-            end_date=end_date,
+            start_date=clean_start,
+            end_date=clean_end,
         )
         expense_breakdown: List[CategoryBreakdownItem] = []
         for r in expense_rows:
@@ -64,8 +75,8 @@ class ReportService:
             db=db,
             user_id=user.id,
             transaction_type="income",
-            start_date=start_date,
-            end_date=end_date,
+            start_date=clean_start,
+            end_date=clean_end,
         )
         income_breakdown: List[CategoryBreakdownItem] = []
         for r in income_rows:
@@ -87,8 +98,8 @@ class ReportService:
             select(Transaction.type, Transaction.amount, Transaction.transaction_date)
             .where(
                 Transaction.owner_user_id == user.id,
-                Transaction.transaction_date >= start_date,
-                Transaction.transaction_date <= end_date,
+                Transaction.transaction_date >= clean_start,
+                Transaction.transaction_date <= clean_end,
             )
             .order_by(Transaction.transaction_date.asc())
         )

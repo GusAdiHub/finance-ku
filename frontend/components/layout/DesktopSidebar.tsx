@@ -14,14 +14,13 @@ import {
   Tags,
   UserCheck,
   Plus,
-  Eye,
   LogOut,
   Wallet,
 } from "lucide-react";
 
 export function DesktopSidebar() {
   const pathname = usePathname();
-  const { user, logout, elderlyMode, toggleElderlyMode } = useAuth();
+  const { user, logout } = useAuth();
   const { openTransactionModal } = useModal();
 
   const navItems = [
@@ -42,7 +41,7 @@ export function DesktopSidebar() {
             <Wallet className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="font-black text-xl text-black leading-tight tracking-tight">SakuKeluarga</h1>
+            <h1 className="font-black text-xl text-black leading-tight tracking-tight">SakuKu</h1>
             <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Shared Finance</p>
           </div>
         </div>
@@ -55,12 +54,10 @@ export function DesktopSidebar() {
         {/* Quick Add Button */}
         <button
           onClick={() => openTransactionModal()}
-          className={`w-full bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black rounded-xl py-3 px-4 flex items-center justify-center gap-2 border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all ${
-            elderlyMode ? "py-4 text-base" : "text-sm"
-          }`}
+          className="w-full bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black rounded-xl py-3 px-4 flex items-center justify-center gap-2 border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all text-sm"
         >
           <Plus className="w-5 h-5 stroke-[3]" />
-          <span>{elderlyMode ? "CATAT UANG BARU" : "CATAT TRANSAKSI"}</span>
+          <span>CATAT TRANSAKSI</span>
         </button>
 
         {/* Navigation Links */}
@@ -72,11 +69,11 @@ export function DesktopSidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all text-sm ${
                   isActive
                     ? "bg-neo-yellow text-black font-black border-2 border-black shadow-[3px_3px_0px_0px_#000]"
                     : "text-black font-bold hover:bg-neo-yellowLight/80 hover:backdrop-blur-sm hover:border-2 hover:border-black hover:shadow-[2px_2px_0px_0px_#000] border-2 border-transparent"
-                } ${elderlyMode ? "text-base py-3.5" : "text-sm"}`}
+                }`}
               >
                 <Icon className="w-5 h-5 stroke-[2.5] text-black" />
                 <span className="text-black">{item.label}</span>
@@ -86,34 +83,8 @@ export function DesktopSidebar() {
         </nav>
       </div>
 
-      {/* Bottom Area: Elderly Toggle & User Info */}
+      {/* Bottom Area: User Info */}
       <div className="pt-4 border-t-2 border-black flex flex-col gap-3">
-        {/* Mode Ramah Orang Tua Toggle */}
-        <div className="bg-white/80 backdrop-blur-md border-2 border-black rounded-xl p-3 shadow-[3px_3px_0px_0px_#000] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-neo-yellowLight border border-black text-black flex items-center justify-center">
-              <Eye className="w-4 h-4 stroke-[2.5]" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-black">Mode Orang Tua</p>
-              <p className="text-[10px] text-slate-600 font-medium">Teks lebih besar</p>
-            </div>
-          </div>
-          <button
-            onClick={toggleElderlyMode}
-            className={`w-11 h-6 rounded-full border-2 border-black transition-colors relative focus:outline-none ${
-              elderlyMode ? "bg-neo-green" : "bg-slate-200"
-            }`}
-            aria-label="Toggle Mode Orang Tua"
-          >
-            <span
-              className={`block w-4 h-4 rounded-full bg-black transition-transform absolute top-0.5 ${
-                elderlyMode ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
-        </div>
-
         {/* User Card */}
         {user && (
           <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/80 backdrop-blur-md border-2 border-black shadow-[3px_3px_0px_0px_#000]">

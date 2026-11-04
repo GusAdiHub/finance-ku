@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useModal } from "@/lib/modal-context";
+import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
 import { Transaction, Category } from "@/lib/types";
 import {
@@ -26,11 +27,15 @@ import {
   CheckCircle2,
   Clock,
   FolderKanban,
+  Eye,
+  X,
+  Loader2,
 } from "lucide-react";
 
 export default function TransactionsPage() {
-  const { activeScope, selectedGroup, elderlyMode } = useAuth();
+  const { activeScope, selectedGroup } = useAuth();
   const { openTransactionModal } = useModal();
+  const toast = useToast();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,11 +48,59 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [reimburseFilter, setReimburseFilter] = useState<"all" | "pending" | "settled">("all");
+  const [reimburseFilter, setReimburseFilter] = useState<
+    "all" | "pending" | "settled" | "has_receipt" | "no_receipt"
+  >("all");
   const [page, setPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [settlingTxId, setSettlingTxId] = useState<string | null>(null);
+
+  // Receipt Preview Modal States
+  const [viewingReceiptId, setViewingReceiptId] = useState<string | null>(null);
+  const [receiptDetail, setReceiptDetail] = useState<any | null>(null);
+  const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState<boolean>(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+
+  const handleOpenReceipt = async (receiptId: string) => {
+    setViewingReceiptId(receiptId);
+    setReceiptLoading(true);
+    setReceiptError(null);
+    setReceiptDetail(null);
+    if (receiptImageUrl) {
+      URL.revokeObjectURL(receiptImageUrl);
+      setReceiptImageUrl(null);
+    }
+
+    try {
+      const [detail, imgUrl] = await Promise.allSettled([
+        api.getReceipt(receiptId),
+        api.getReceiptImageBlobUrl(receiptId),
+      ]);
+
+      if (detail.status === "fulfilled") {
+        setReceiptDetail(detail.value);
+      }
+      if (imgUrl.status === "fulfilled") {
+        setReceiptImageUrl(imgUrl.value);
+      }
+    } catch (err: any) {
+      setReceiptError(err.message || "Gagal memuat data struk.");
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
+
+  const handleCloseReceipt = () => {
+    setViewingReceiptId(null);
+    setReceiptDetail(null);
+    if (receiptImageUrl) {
+      URL.revokeObjectURL(receiptImageUrl);
+      setReceiptImageUrl(null);
+    }
+    setReceiptError(null);
+  };
 
   const fetchCategories = async () => {
     try {
@@ -105,6 +158,11 @@ export default function TransactionsPage() {
 
   const handleSettleReimburse = async (tx: Transaction) => {
     if (!selectedGroup) return;
+    const r = parseReimburseStatus(tx.notes);
+    if (!r.canReimburse) {
+      toast.error("Transaksi ini dicatat tanpa nota sehingga tidak bisa direimburse.", "Syarat Tidak Terpenuhi");
+      return;
+    }
     const confirmSettle = confirm(
       `Tandai nota "${tx.description || "Talangan"}" sebesar ${formatRupiah(tx.amount)} sebagai SUDAH DIREIMBURSE?`
     );
@@ -114,9 +172,14 @@ export default function TransactionsPage() {
     try {
       const settledNote = encodeReimburseNotes("settled", tx.notes);
       await api.updateGroupTransaction(selectedGroup.id, tx.id, { notes: settledNote });
+      toast.success(
+        `Nota ${tx.description || "Talangan"} (${formatRupiah(tx.amount)}) berhasil direimburse!`,
+        "Reimburse Selesai"
+      );
       fetchTransactions();
+      window.dispatchEvent(new CustomEvent("refresh-data"));
     } catch (err: any) {
-      alert(err.message || "Gagal mengubah status reimbursement.");
+      toast.error(err.message || "Gagal mengubah status reimbursement.", "Gagal");
     } finally {
       setSettlingTxId(null);
     }
@@ -128,17 +191,13 @@ export default function TransactionsPage() {
       if (activeScope === "personal") {
         await api.deleteTransaction(txId);
       } else if (selectedGroup) {
-        // Use group transaction delete endpoint via fetch/api
-        await fetch(`http://localhost:8000/api/v1/groups/${selectedGroup.id}/transactions/${txId}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        });
+        await api.deleteGroupTransaction(selectedGroup.id, txId);
       }
+      toast.info("Transaksi berhasil dihapus.", "Terhapus");
       fetchTransactions();
+      window.dispatchEvent(new CustomEvent("refresh-data"));
     } catch (err: any) {
-      alert(err.message || "Gagal menghapus transaksi.");
+      toast.error(err.message || "Gagal menghapus transaksi.", "Gagal");
     }
   };
 
@@ -158,6 +217,8 @@ export default function TransactionsPage() {
     const r = parseReimburseStatus(tx.notes);
     if (reimburseFilter === "pending") return r.isPending;
     if (reimburseFilter === "settled") return r.isSettled;
+    if (reimburseFilter === "has_receipt") return r.hasReceipt || tx.input_method === "ocr";
+    if (reimburseFilter === "no_receipt") return r.noReceipt;
     return true;
   });
 
@@ -166,8 +227,8 @@ export default function TransactionsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-xl p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000]">
         <div>
-          <h1 className={`font-black text-black tracking-tight ${elderlyMode ? "text-2xl" : "text-xl sm:text-2xl"}`}>
-            {elderlyMode ? "Riwayat Uang Masuk & Keluar" : "Riwayat Transaksi & Nota"}
+          <h1 className="font-black text-black tracking-tight text-xl sm:text-2xl">
+            Riwayat Transaksi & Nota
           </h1>
           <p className="text-xs sm:text-sm font-semibold text-slate-700 mt-0.5">
             {activeScope === "personal"
@@ -182,7 +243,7 @@ export default function TransactionsPage() {
           className="bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
-          <span>{elderlyMode ? "Catat Uang Baru" : "Tambah Transaksi"}</span>
+          <span>Tambah Transaksi</span>
         </button>
       </div>
 
@@ -277,12 +338,12 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        {/* Reimbursement Filter Pills (Only visible in Kas Tim / Event scope) */}
+        {/* Reimbursement & Receipt Filter Pills (Only visible in Kas Tim / Event scope) */}
         {isGroupScope && (
           <div className="flex items-center gap-2 pt-2 border-t border-black/20 flex-wrap">
             <span className="text-xs font-black text-black flex items-center gap-1">
               <HandCoins className="w-3.5 h-3.5 text-black stroke-[2.5]" />
-              <span>Status Reimburse:</span>
+              <span>Status Nota & Reimburse:</span>
             </span>
             <button
               onClick={() => setReimburseFilter("all")}
@@ -292,13 +353,33 @@ export default function TransactionsPage() {
                   : "bg-white text-black hover:bg-slate-100"
               }`}
             >
-              Semua Transaksi
+              Semua
+            </button>
+            <button
+              onClick={() => setReimburseFilter("has_receipt")}
+              className={`text-xs px-2.5 py-1 rounded-lg border-2 border-black font-bold transition-all ${
+                reimburseFilter === "has_receipt"
+                  ? "bg-emerald-400 text-black shadow-[2px_2px_0px_0px_#000] font-black"
+                  : "bg-white text-black hover:bg-emerald-50"
+              }`}
+            >
+              🧾 Ada Nota
+            </button>
+            <button
+              onClick={() => setReimburseFilter("no_receipt")}
+              className={`text-xs px-2.5 py-1 rounded-lg border-2 border-black font-bold transition-all ${
+                reimburseFilter === "no_receipt"
+                  ? "bg-rose-400 text-black shadow-[2px_2px_0px_0px_#000] font-black"
+                  : "bg-white text-black hover:bg-rose-50"
+              }`}
+            >
+              🚫 Tanpa Nota
             </button>
             <button
               onClick={() => setReimburseFilter("pending")}
               className={`text-xs px-2.5 py-1 rounded-lg border-2 border-black font-bold transition-all ${
                 reimburseFilter === "pending"
-                  ? "bg-amber-400 text-black shadow-[2px_2px_0px_0px_#000]"
+                  ? "bg-amber-400 text-black shadow-[2px_2px_0px_0px_#000] font-black"
                   : "bg-white text-black hover:bg-amber-100"
               }`}
             >
@@ -308,7 +389,7 @@ export default function TransactionsPage() {
               onClick={() => setReimburseFilter("settled")}
               className={`text-xs px-2.5 py-1 rounded-lg border-2 border-black font-bold transition-all ${
                 reimburseFilter === "settled"
-                  ? "bg-neo-green text-black shadow-[2px_2px_0px_0px_#000]"
+                  ? "bg-neo-green text-black shadow-[2px_2px_0px_0px_#000] font-black"
                   : "bg-white text-black hover:bg-emerald-100"
               }`}
             >
@@ -350,24 +431,51 @@ export default function TransactionsPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className={`font-black text-black truncate ${elderlyMode ? "text-base" : "text-sm"}`}>
+                        <p className="font-black text-black truncate text-sm">
                           {tx.category?.name || "Lain-lain"}
                         </p>
+                        {/* Status Nota Bukti Kas Event */}
+                        {isGroupScope && isExpense && (
+                          (reimburse.hasReceipt || tx.input_method === "ocr") ? (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-950 font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
+                              🧾 ADA NOTA
+                            </span>
+                          ) : reimburse.noReceipt ? (
+                            <span className="text-[10px] bg-rose-100 text-rose-950 font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
+                              🚫 TANPA NOTA
+                            </span>
+                          ) : null
+                        )}
                         {reimburse.isPending && (
                           <span className="text-[10px] bg-amber-400 text-black font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
-                            PERLU REIMBURSE
+                            ⏳ PERLU REIMBURSE
                           </span>
                         )}
                         {reimburse.isSettled && (
                           <span className="text-[10px] bg-neo-green text-black font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
-                            DIREIMBURSE
+                            ✓ DIREIMBURSE
                           </span>
                         )}
-                        {tx.input_method === "ocr" && (
+                        {isGroupScope && isExpense && reimburse.noReceipt && (
+                          <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-1.5 py-0.5 rounded border border-slate-400">
+                            TIDAK BISA REIMBURSE
+                          </span>
+                        )}
+                        {tx.receipt_id ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReceipt(tx.receipt_id!)}
+                            className="text-[10px] bg-neo-blue hover:bg-blue-600 text-white font-black px-2 py-0.5 rounded-lg border border-black shadow-[1px_1px_0px_0px_#000] flex items-center gap-1 active:translate-x-[1px] active:translate-y-[1px] transition-all cursor-pointer"
+                            title="Klik untuk melihat foto bukti struk / nota"
+                          >
+                            <Eye className="w-3 h-3 stroke-[2.5]" />
+                            <span>Lihat Nota</span>
+                          </button>
+                        ) : tx.input_method === "ocr" ? (
                           <span className="text-[10px] bg-neo-blue text-white font-black px-1.5 py-0.5 rounded border border-black">
                             STRUK
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="text-xs font-semibold text-slate-600 truncate">
                         {tx.description || (isExpense ? "Pengeluaran" : "Pemasukan")} • {formatDate(tx.transaction_date)}
@@ -396,9 +504,9 @@ export default function TransactionsPage() {
 
                     <div className="text-right">
                       <p
-                        className={`font-black ${
+                        className={`font-black text-sm sm:text-base ${
                           isExpense ? "text-rose-700" : "text-emerald-700"
-                        } ${elderlyMode ? "text-lg" : "text-sm sm:text-base"}`}
+                        }`}
                       >
                         {isExpense ? "-" : "+"}
                         {formatRupiah(tx.amount)}
@@ -452,6 +560,110 @@ export default function TransactionsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal Preview Foto Struk / Nota */}
+      {viewingReceiptId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl border-3 border-black shadow-[6px_6px_0px_0px_#000] max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 bg-neo-yellow border-b-2 border-black flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-black stroke-[2.5]" />
+                <h3 className="font-black text-black text-base">Foto Bukti Struk & Nota</h3>
+              </div>
+              <button
+                onClick={handleCloseReceipt}
+                className="p-1 rounded-lg border-2 border-black bg-white hover:bg-rose-100 text-black transition-all"
+              >
+                <X className="w-4 h-4 stroke-[3]" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 overflow-y-auto space-y-4 flex-1">
+              {receiptLoading ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-600">
+                  <Loader2 className="w-7 h-7 animate-spin text-black" />
+                  <p className="text-xs font-bold">Memuat file struk...</p>
+                </div>
+              ) : receiptError ? (
+                <div className="p-4 bg-rose-100 border-2 border-black text-rose-950 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 stroke-[2.5]" />
+                  <span>{receiptError}</span>
+                </div>
+              ) : (
+                <>
+                  {/* Image Preview */}
+                  {receiptImageUrl ? (
+                    <div className="border-2 border-black rounded-xl overflow-hidden bg-slate-900 flex items-center justify-center max-h-[350px]">
+                      <img
+                        src={receiptImageUrl}
+                        alt="Bukti Nota"
+                        className="max-h-[350px] w-auto object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-6 bg-slate-100 border-2 border-black rounded-xl text-center text-xs font-bold text-slate-600">
+                      File gambar struk tidak ditemukan pada server media.
+                    </div>
+                  )}
+
+                  {/* Extracted Details */}
+                  {receiptDetail && (
+                    <div className="bg-slate-50 border-2 border-black rounded-xl p-3.5 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-600">Merchant / Toko:</span>
+                        <span className="font-black text-black">{receiptDetail.merchant_name || "-"}</span>
+                      </div>
+                      {receiptDetail.total_amount && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-600">Total Nominal:</span>
+                          <span className="font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-black">
+                            {formatRupiah(receiptDetail.total_amount)}
+                          </span>
+                        </div>
+                      )}
+                      {receiptDetail.receipt_date && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-600">Tanggal Nota:</span>
+                          <span className="font-bold text-black">{formatDate(receiptDetail.receipt_date)}</span>
+                        </div>
+                      )}
+
+                      {/* Extracted items breakdown */}
+                      {receiptDetail.items && receiptDetail.items.length > 0 && (
+                        <div className="pt-2 border-t border-black/10">
+                          <p className="text-[11px] font-black text-slate-700 mb-1.5">Item Belanja Terdeteksi:</p>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {receiptDetail.items.map((it: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between text-[11px] bg-white p-1.5 rounded border border-slate-200">
+                                <span className="font-bold text-black truncate mr-2">{it.item_name}</span>
+                                <span className="font-mono font-bold text-slate-700 flex-shrink-0">
+                                  {it.quantity > 1 ? `${it.quantity}x ` : ""}{formatRupiah(it.total_price || it.price_per_unit)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-50 border-t-2 border-black flex items-center justify-end">
+              <button
+                onClick={handleCloseReceipt}
+                className="bg-white hover:bg-slate-100 text-black font-black text-xs px-4 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px]"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

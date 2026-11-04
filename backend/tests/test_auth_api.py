@@ -72,7 +72,7 @@ def test_register_validation_error(client: TestClient):
 
 
 def test_login_success(client: TestClient):
-    """Test successful user login."""
+    """Test successful user login with email and with username."""
     # First register user
     reg_payload = {
         "name": "Login User",
@@ -81,17 +81,48 @@ def test_login_success(client: TestClient):
     }
     client.post("/api/v1/auth/register", json=reg_payload)
 
-    # Now login
-    login_payload = {
+    # Login using email
+    login_payload_email = {
         "email": "login.user@example.com",
         "password": "SecretPassword123!",
     }
-    response = client.post("/api/v1/auth/login", json=login_payload)
+    response = client.post("/api/v1/auth/login", json=login_payload_email)
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
     assert data["user"]["email"] == "login.user@example.com"
+
+    # Login using username
+    login_payload_username = {
+        "username": "Login User",
+        "password": "SecretPassword123!",
+    }
+    res_user = client.post("/api/v1/auth/login", json=login_payload_username)
+    assert res_user.status_code == 200
+    assert "access_token" in res_user.json()
+
+
+def test_register_and_login_with_username_only(client: TestClient):
+    """Test registering with username only (no email) and logging in with username."""
+    reg_payload = {
+        "name": "gusadi_user",
+        "password": "SecretPassword123!",
+    }
+    reg_res = client.post("/api/v1/auth/register", json=reg_payload)
+    assert reg_res.status_code == 201
+    reg_data = reg_res.json()
+    assert reg_data["user"]["name"] == "gusadi_user"
+    assert "gusadi_user" in reg_data["user"]["email"]
+
+    # Login with username
+    login_payload = {
+        "username": "gusadi_user",
+        "password": "SecretPassword123!",
+    }
+    login_res = client.post("/api/v1/auth/login", json=login_payload)
+    assert login_res.status_code == 200
+    assert "access_token" in login_res.json()
 
 
 def test_login_incorrect_password(client: TestClient):

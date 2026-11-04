@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
 
 class ApiClient {
   private getHeaders(): HeadersInit {
@@ -118,8 +118,18 @@ class ApiClient {
     return this.request<any>("/dashboard/personal");
   }
 
-  async getPersonalReport(period = "monthly") {
-    return this.request<any>(`/reports/personal?period=${period}`);
+  async getPersonalReport(params?: string | { period?: string; start_date?: string; end_date?: string }) {
+    if (typeof params === "string") {
+      return this.request<any>(`/reports/personal?period=${params}`);
+    }
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      if (params.period) cleanParams.period = params.period;
+      if (params.start_date) cleanParams.start_date = params.start_date;
+      if (params.end_date) cleanParams.end_date = params.end_date;
+    }
+    const query = Object.keys(cleanParams).length > 0 ? "?" + new URLSearchParams(cleanParams).toString() : "";
+    return this.request<any>(`/reports/personal${query}`);
   }
 
   // Groups
@@ -191,12 +201,28 @@ class ApiClient {
     });
   }
 
+  async deleteGroupTransaction(groupId: string, transactionId: string) {
+    return this.request<any>(`/groups/${groupId}/transactions/${transactionId}`, {
+      method: "DELETE",
+    });
+  }
+
   async getGroupDashboard(groupId: string) {
     return this.request<any>(`/groups/${groupId}/dashboard`);
   }
 
-  async getGroupReport(groupId: string, period = "monthly") {
-    return this.request<any>(`/groups/${groupId}/reports?period=${period}`);
+  async getGroupReport(groupId: string, params?: string | { period?: string; start_date?: string; end_date?: string }) {
+    if (typeof params === "string") {
+      return this.request<any>(`/groups/${groupId}/reports?period=${params}`);
+    }
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      if (params.period) cleanParams.period = params.period;
+      if (params.start_date) cleanParams.start_date = params.start_date;
+      if (params.end_date) cleanParams.end_date = params.end_date;
+    }
+    const query = Object.keys(cleanParams).length > 0 ? "?" + new URLSearchParams(cleanParams).toString() : "";
+    return this.request<any>(`/groups/${groupId}/reports${query}`);
   }
 
   // Receipts & OCR Endpoints
@@ -230,6 +256,16 @@ class ApiClient {
 
   async getReceipt(id: string) {
     return this.request<any>(`/receipts/${id}`);
+  }
+
+  async getReceiptImageBlobUrl(id: string): Promise<string> {
+    const url = `${API_BASE_URL}/receipts/${id}/file`;
+    const response = await fetch(url, { headers: this.getHeaders() });
+    if (!response.ok) {
+      throw new Error("Gagal memuat file foto bukti nota.");
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
   }
 
   async confirmReceipt(id: string, data: any) {

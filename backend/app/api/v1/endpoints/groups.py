@@ -1,5 +1,5 @@
 """Family Finance endpoints: groups, members, invitations, shared transactions, dashboard, and reports."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, Query, status
@@ -470,7 +470,14 @@ def get_group_report(
     if not end_date:
         end_date = now
     if not start_date:
-        start_date = datetime(end_date.year, end_date.month, 1, tzinfo=timezone.utc)
+        if period == "yearly":
+            start_date = datetime(end_date.year, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        elif period == "weekly":
+            start_date = end_date - timedelta(days=7)
+        elif period == "daily":
+            start_date = datetime(end_date.year, end_date.month, end_date.day, 0, 0, 0, tzinfo=timezone.utc)
+        else:
+            start_date = datetime(end_date.year, end_date.month, 1, 0, 0, 0, tzinfo=timezone.utc)
 
     return GroupTransactionService.get_group_report(
         db=db,

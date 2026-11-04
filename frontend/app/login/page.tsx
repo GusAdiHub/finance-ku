@@ -4,14 +4,15 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { Wallet, LogIn, Lock, Mail, AlertCircle } from "lucide-react";
+import { Wallet, LogIn, Lock, User, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated, isLoading } = useAuth();
 
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberUsername, setRememberUsername] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -21,16 +22,43 @@ export default function LoginPage() {
     }
   }, [isLoading, isAuthenticated, router]);
 
+  // Load remembered username from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("sakuku_saved_username");
+      if (saved) {
+        setUsername(saved);
+        setRememberUsername(true);
+      }
+    } catch {
+      // Ignored for restricted storage
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
-      await login({ email, password });
+      const trimmedUser = username.trim();
+      await login({ username: trimmedUser, password });
+
+      try {
+        if (rememberUsername) {
+          localStorage.setItem("sakuku_saved_username", trimmedUser);
+        } else {
+          localStorage.removeItem("sakuku_saved_username");
+        }
+      } catch {
+        // Ignored
+      }
+
       router.push("/");
     } catch (err: any) {
-      setErrorMessage(err.message || "Gagal masuk. Periksa kembali email dan kata sandi Anda.");
+      setErrorMessage(
+        err.message || "Gagal masuk. Periksa kembali username atau kata sandi Anda."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -45,7 +73,7 @@ export default function LoginPage() {
             <Wallet className="w-7 h-7 stroke-[2.5]" />
           </div>
           <h1 className="text-2xl font-black text-black tracking-tight">Selamat Datang</h1>
-          <p className="text-sm font-semibold text-slate-700 mt-1">Masuk ke akun SakuKeluarga Anda</p>
+          <p className="text-sm font-semibold text-slate-700 mt-1">Masuk ke akun SakuKu Anda</p>
         </div>
 
         {errorMessage && (
@@ -57,15 +85,18 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-black text-black mb-1.5">Alamat Email</label>
+            <label className="block text-xs font-black text-black mb-1.5">
+              Username atau Email
+            </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-black absolute left-3.5 top-1/2 -translate-y-1/2 stroke-[2.5]" />
+              <User className="w-4 h-4 text-black absolute left-3.5 top-1/2 -translate-y-1/2 stroke-[2.5]" />
               <input
-                type="email"
+                type="text"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nama@email.com"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Contoh: gusadi"
                 className="w-full bg-white border-2 border-black rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold text-black placeholder-slate-400 shadow-[2px_2px_0px_0px_#000] outline-none"
               />
             </div>
@@ -78,12 +109,28 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full bg-white border-2 border-black rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold text-black placeholder-slate-400 shadow-[2px_2px_0px_0px_#000] outline-none"
               />
             </div>
+          </div>
+
+          {/* Remember Username Checkbox */}
+          <div className="flex items-center justify-between pt-0.5">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberUsername}
+                onChange={(e) => setRememberUsername(e.target.checked)}
+                className="w-4 h-4 rounded border-2 border-black accent-black cursor-pointer"
+              />
+              <span className="text-xs font-black text-black">
+                Ingat username di perangkat ini
+              </span>
+            </label>
           </div>
 
           <button
@@ -100,7 +147,10 @@ export default function LoginPage() {
 
         <div className="mt-8 text-center text-xs font-bold text-slate-700">
           <span>Belum punya akun? </span>
-          <Link href="/register" className="text-black font-black underline underline-offset-4 decoration-2 hover:text-neo-blue">
+          <Link
+            href="/register"
+            className="text-black font-black underline underline-offset-4 decoration-2 hover:text-neo-blue"
+          >
             Daftar Sekarang
           </Link>
         </div>

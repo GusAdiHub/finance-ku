@@ -39,7 +39,11 @@ export default function RegisterPage() {
 
     setIsSubmitting(true);
     try {
-      await register({ name, email, password });
+      await register({
+        name: name.trim(),
+        email: email.trim() ? email.trim() : undefined,
+        password,
+      });
       router.push("/");
     } catch (err: any) {
       setErrorMessage(err.message || "Gagal membuat akun.");
@@ -57,7 +61,7 @@ export default function RegisterPage() {
             <Wallet className="w-7 h-7 stroke-[2.5]" />
           </div>
           <h1 className="text-2xl font-black text-black tracking-tight">Buat Akun Baru</h1>
-          <p className="text-sm font-semibold text-slate-700 mt-1">Mulai kelola keuangan pribadi dan keluarga</p>
+          <p className="text-sm font-semibold text-slate-700 mt-1">Mulai kelola keuangan pribadi dan kas event bersama SakuKu</p>
         </div>
 
         {errorMessage && (
@@ -69,30 +73,35 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-black text-black mb-1.5">Nama Lengkap</label>
+            <label className="block text-xs font-black text-black mb-1.5">
+              Username / Nama Pengguna
+            </label>
             <div className="relative">
               <User className="w-4 h-4 text-black absolute left-3.5 top-1/2 -translate-y-1/2 stroke-[2.5]" />
               <input
                 type="text"
                 required
+                autoComplete="username"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Budi Santoso"
+                placeholder="Contoh: gusadi"
                 className="w-full bg-white border-2 border-black rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold text-black placeholder-slate-400 shadow-[2px_2px_0px_0px_#000] outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-black text-black mb-1.5">Alamat Email</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-black text-black">Alamat Email</label>
+              <span className="text-[11px] font-semibold text-slate-500">Opsional</span>
+            </div>
             <div className="relative">
               <Mail className="w-4 h-4 text-black absolute left-3.5 top-1/2 -translate-y-1/2 stroke-[2.5]" />
               <input
                 type="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nama@email.com"
+                placeholder="nama@email.com (opsional)"
                 className="w-full bg-white border-2 border-black rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold text-black placeholder-slate-400 shadow-[2px_2px_0px_0px_#000] outline-none"
               />
             </div>
@@ -106,6 +115,7 @@ export default function RegisterPage() {
                 type="password"
                 required
                 minLength={8}
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Minimal 8 karakter"
@@ -121,6 +131,7 @@ export default function RegisterPage() {
               <input
                 type="password"
                 required
+                autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Ulangi kata sandi"

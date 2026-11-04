@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 
 export default function GroupsPage() {
-  const { user, userGroups, selectedGroup, setSelectedGroup, refreshGroups, elderlyMode } = useAuth();
+  const { user, userGroups, selectedGroup, setSelectedGroup, refreshGroups } = useAuth();
 
   const [activeGroupId, setActiveGroupId] = useState<string>(selectedGroup?.id || "");
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -244,8 +244,8 @@ export default function GroupsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-xl p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000]">
         <div>
-          <h1 className={`font-black text-black tracking-tight ${elderlyMode ? "text-2xl" : "text-xl sm:text-2xl"}`}>
-            {elderlyMode ? "Kas Tim & Event" : "Kelola Kas Tim, Event & Proyek"}
+          <h1 className="font-black text-black tracking-tight text-xl sm:text-2xl">
+            Kelola Kas Tim, Event & Proyek
           </h1>
           <p className="text-xs sm:text-sm font-semibold text-slate-700 mt-0.5">
             Kelola pagu anggaran, buku kas bersama (Shared Ledger), anggota tim, dan kode undangan.

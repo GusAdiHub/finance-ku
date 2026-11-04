@@ -1,5 +1,5 @@
 """Financial reports endpoints."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 def get_personal_report(
     start_date: Optional[datetime] = Query(None, description="Start date of report period (UTC)"),
     end_date: Optional[datetime] = Query(None, description="End date of report period (UTC)"),
-    period: str = Query("monthly", description="Report interval label ('monthly', 'yearly', 'custom')"),
+    period: str = Query("monthly", description="Report interval label ('monthly', 'yearly', 'daily', 'custom')"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> PersonalReportResponse:
@@ -31,8 +31,15 @@ def get_personal_report(
     if not end_date:
         end_date = now
     if not start_date:
-        # Default to beginning of the current month
-        start_date = datetime(end_date.year, end_date.month, 1, tzinfo=timezone.utc)
+        if period == "yearly":
+            start_date = datetime(end_date.year, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        elif period == "weekly":
+            start_date = end_date - timedelta(days=7)
+        elif period == "daily":
+            start_date = datetime(end_date.year, end_date.month, end_date.day, 0, 0, 0, tzinfo=timezone.utc)
+        else:
+            # Default to beginning of the current month
+            start_date = datetime(end_date.year, end_date.month, 1, 0, 0, 0, tzinfo=timezone.utc)
 
     return ReportService.get_personal_report(
         db=db,

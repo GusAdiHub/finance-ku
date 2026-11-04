@@ -140,6 +140,7 @@ export interface GroupDashboard {
   group_name: string;
   total_income: number | string;
   total_expense: number | string;
+  pending_reimbursement?: number | string;
   net_balance: number | string;
   recent_transactions: Transaction[];
   expense_by_category: CategoryBreakdown[];

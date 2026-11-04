@@ -69,7 +69,7 @@ export function encodeGroupDescription(cleanDescription: string, budget?: number
   return desc;
 }
 
-// Reimbursement Status Helpers for Event & Team Cash
+// Reimbursement Status & Receipt Proof Helpers for Event & Team Cash
 export type ReimburseStatus = "none" | "pending" | "settled";
 
 export function parseReimburseStatus(notes?: string | null): {
@@ -77,39 +77,107 @@ export function parseReimburseStatus(notes?: string | null): {
   isPending: boolean;
   isSettled: boolean;
   isReimburse: boolean;
+  hasReceipt: boolean;
+  noReceipt: boolean;
+  canReimburse: boolean;
   cleanNotes: string;
 } {
   if (!notes) {
-    return { status: "none", isPending: false, isSettled: false, isReimburse: false, cleanNotes: "" };
+    return {
+      status: "none",
+      isPending: false,
+      isSettled: false,
+      isReimburse: false,
+      hasReceipt: false,
+      noReceipt: false,
+      canReimburse: true,
+      cleanNotes: "",
+    };
   }
   const isPending = notes.includes("[REIMBURSE_PENDING]");
   const isSettled = notes.includes("[REIMBURSED]");
-  const status: ReimburseStatus = isPending ? "pending" : isSettled ? "settled" : "none";
+  const hasNotaTag = notes.includes("[ADA_NOTA]");
+  const noNotaTag = notes.includes("[TANPA_NOTA]");
+
+  // A purchase without a receipt explicitly CANNOT be reimbursed
+  const canReimburse = !noNotaTag;
+  const status: ReimburseStatus = canReimburse
+    ? isPending
+      ? "pending"
+      : isSettled
+      ? "settled"
+      : "none"
+    : "none";
+
+  const hasReceipt = hasNotaTag || isPending || isSettled;
+  const noReceipt = noNotaTag;
+
   const cleanNotes = notes
+    .replace("[ADA_NOTA]", "")
+    .replace("[TANPA_NOTA]", "")
     .replace("[REIMBURSE_PENDING]", "")
     .replace("[REIMBURSED]", "")
     .trim();
 
   return {
     status,
-    isPending,
-    isSettled,
-    isReimburse: isPending || isSettled,
+    isPending: status === "pending",
+    isSettled: status === "settled",
+    isReimburse: status === "pending" || status === "settled",
+    hasReceipt,
+    noReceipt,
+    canReimburse,
     cleanNotes,
   };
 }
 
-export function encodeReimburseNotes(status: ReimburseStatus, userNotes?: string | null): string {
+export function encodeReceiptAndReimburseNotes(
+  hasReceipt: boolean,
+  reimbursePending: boolean,
+  userNotes?: string | null
+): string {
   const clean = (userNotes || "")
+    .replace("[ADA_NOTA]", "")
+    .replace("[TANPA_NOTA]", "")
     .replace("[REIMBURSE_PENDING]", "")
     .replace("[REIMBURSED]", "")
     .trim();
 
+  const tags: string[] = [];
+  if (hasReceipt) {
+    tags.push("[ADA_NOTA]");
+    if (reimbursePending) {
+      tags.push("[REIMBURSE_PENDING]");
+    }
+  } else {
+    // Tanpa nota -> explicitly marked, cannot be reimbursed!
+    tags.push("[TANPA_NOTA]");
+  }
+
+  const prefix = tags.join(" ");
+  return clean ? `${prefix} ${clean}` : prefix;
+}
+
+export function encodeReimburseNotes(status: ReimburseStatus, userNotes?: string | null): string {
+  const hadNoNota = userNotes?.includes("[TANPA_NOTA]") ?? false;
+  const hadNota = userNotes?.includes("[ADA_NOTA]") ?? false;
+  const clean = (userNotes || "")
+    .replace("[ADA_NOTA]", "")
+    .replace("[TANPA_NOTA]", "")
+    .replace("[REIMBURSE_PENDING]", "")
+    .replace("[REIMBURSED]", "")
+    .trim();
+
+  if (hadNoNota) {
+    return clean ? `[TANPA_NOTA] ${clean}` : "[TANPA_NOTA]";
+  }
+
+  const notaTag = hadNota || status !== "none" ? "[ADA_NOTA] " : "";
   if (status === "pending") {
-    return clean ? `[REIMBURSE_PENDING] ${clean}` : "[REIMBURSE_PENDING]";
+    return `${notaTag}[REIMBURSE_PENDING] ${clean}`.trim();
   }
   if (status === "settled") {
-    return clean ? `[REIMBURSED] ${clean}` : "[REIMBURSED]";
+    return `${notaTag}[REIMBURSED] ${clean}`.trim();
   }
   return clean;
 }

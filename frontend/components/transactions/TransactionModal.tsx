@@ -3,9 +3,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModal } from "@/lib/modal-context";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
 import { Category, TransactionItem } from "@/lib/types";
-import { formatRupiah, encodeReimburseNotes } from "@/lib/utils";
+import { formatRupiah, encodeReimburseNotes, encodeReceiptAndReimburseNotes } from "@/lib/utils";
+import { compressReceiptImage } from "@/lib/image-utils";
 import {
   X,
   Keyboard,
@@ -27,11 +29,13 @@ import {
   Plus,
   FolderKanban,
   HandCoins,
+  Receipt,
 } from "lucide-react";
 
 export function TransactionModal() {
   const { isOpen, options, closeTransactionModal } = useModal();
-  const { activeScope, selectedGroup, userGroups, elderlyMode } = useAuth();
+  const { activeScope, selectedGroup, userGroups } = useAuth();
+  const { success: toastSuccess, error: toastError } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [method, setMethod] = useState<"manual" | "ocr" | "voice">("manual");
@@ -42,6 +46,7 @@ export function TransactionModal() {
   const [description, setDescription] = useState<string>("");
   const [targetScope, setTargetScope] = useState<"personal" | "family">(activeScope);
   const [targetGroupId, setTargetGroupId] = useState<string>(selectedGroup?.id || "");
+  const [hasReceipt, setHasReceipt] = useState<boolean>(true);
   const [isReimbursePending, setIsReimbursePending] = useState<boolean>(false);
 
   // OCR specific states
@@ -62,11 +67,13 @@ export function TransactionModal() {
 
   // Voice specific states
   const [isListening, setIsListening] = useState<boolean>(false);
-  const [voiceTranscript, setVoiceTranscript] = useState<string>("" );
+  const [voiceTranscript, setVoiceTranscript] = useState<string>("");
   const [isParsingVoice, setIsParsingVoice] = useState<boolean>(false);
   const [voiceParsedSummary, setVoiceParsedSummary] = useState<string | null>(null);
+  const [isBraveBrowser, setIsBraveBrowser] = useState<boolean>(false);
   const recognitionRef = useRef<any>(null);
   const latestTranscriptRef = useRef<string>("");
+  const silenceTimerRef = useRef<any>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(false);
@@ -99,6 +106,13 @@ export function TransactionModal() {
       setVoiceParsedSummary(null);
       setIsListening(false);
       setIsReimbursePending(false);
+
+      if (typeof window !== "undefined") {
+        const isBrave =
+          typeof (navigator as any).brave !== "undefined" ||
+          navigator.userAgent.toLowerCase().includes("brave");
+        setIsBraveBrowser(isBrave);
+      }
     }
   }, [isOpen, options, activeScope, selectedGroup, userGroups]);
 
@@ -132,34 +146,18 @@ export function TransactionModal() {
     setAmount(String(Math.round(current + val)));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setErrorMessage("Format file harus berupa gambar struk (JPEG, PNG, WebP).");
-      return;
-    }
-
-    setReceiptFile(file);
-    setReceiptPreviewUrl(URL.createObjectURL(file));
-    setReceiptId(null);
-    setExtractedItems([]);
-    setOcrFeedback(null);
-    setErrorMessage(null);
-  };
-
-  const handleRunOCR = async () => {
-    if (!receiptFile) return;
-
+  const executeOCR = async (fileToScan: File) => {
     setIsScanningOCR(true);
     setErrorMessage(null);
     setOcrFeedback(null);
     setSuggestedMerchant(null);
     try {
+      // 1. Ultra-fast client-side compression (< 50ms) to reduce upload payload by ~95%
+      const readyFile = await compressReceiptImage(fileToScan);
+
       const targetGroup = targetScope === "family" ? targetGroupId : undefined;
       const receiptData = await api.uploadReceipt(
-        receiptFile,
+        readyFile,
         targetGroup,
         merchantName.trim() || undefined
       );
@@ -218,6 +216,32 @@ export function TransactionModal() {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Format file harus berupa gambar struk (JPEG, PNG, WebP).");
+      return;
+    }
+
+    setReceiptFile(file);
+    setReceiptPreviewUrl(URL.createObjectURL(file));
+    setReceiptId(null);
+    setExtractedItems([]);
+    setOcrFeedback(null);
+    setErrorMessage(null);
+
+    // Auto-trigger ultra-fast OCR scan on file selection
+    executeOCR(file);
+  };
+
+  const handleRunOCR = () => {
+    if (receiptFile) {
+      executeOCR(receiptFile);
+    }
+  };
+
   const updateExtractedItem = (index: number, field: string, value: any) => {
     setExtractedItems((prev) => {
       const copy = [...prev];
@@ -243,22 +267,44 @@ export function TransactionModal() {
     }
   };
 
-  const startListening = () => {
+  const startListening = async () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setErrorMessage(
-        "Browser Anda belum mendukung Web Speech API bawaan. Anda dapat mengetik kalimat transaksi langsung pada kolom di bawah atau klik contoh cepat."
+        "Browser ini belum mendukung Web Speech API bawaan. Silakan gunakan Google Chrome / Safari / Edge, atau ketik langsung kalimat transaksi pada kolom di bawah."
       );
       return;
     }
 
+    // Explicitly request microphone stream to trigger macOS / browser permission dialog
+    if (typeof navigator !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (mediaErr: any) {
+        console.warn("Microphone permission check:", mediaErr);
+        if (mediaErr.name === "NotAllowedError" || mediaErr.name === "PermissionDeniedError") {
+          setErrorMessage(
+            "Izin mikrofon belum diberikan. Silakan izinkan akses mikrofon di pengaturan browser atau System Settings macOS (Privacy & Security -> Microphone)."
+          );
+          return;
+        }
+      }
+    }
+
     try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {}
+      }
+
       const recognition = new SpeechRecognition();
       recognition.lang = "id-ID";
       recognition.interimResults = true;
-      recognition.continuous = false;
+      recognition.continuous = true;
 
       recognition.onstart = () => {
         setIsListening(true);
@@ -267,42 +313,75 @@ export function TransactionModal() {
       };
 
       recognition.onresult = (event: any) => {
-        let currentText = "";
+        let interimText = "";
+        let finalText = "";
         for (let i = 0; i < event.results.length; i++) {
-          currentText += event.results[i][0].transcript + " ";
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalText += res[0].transcript + " ";
+          } else {
+            interimText += res[0].transcript + " ";
+          }
         }
-        currentText = currentText.trim();
-        latestTranscriptRef.current = currentText;
-        setVoiceTranscript(currentText);
+        const fullText = (finalText + interimText).trim();
+        latestTranscriptRef.current = fullText;
+        setVoiceTranscript(fullText);
+
+        // Auto-finish after 2.2 seconds of silence
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+        silenceTimerRef.current = setTimeout(() => {
+          stopListening();
+        }, 2200);
       };
 
       recognition.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error);
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
         setIsListening(false);
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+
+        const isBrave =
+          typeof (navigator as any).brave !== "undefined" ||
+          navigator.userAgent.toLowerCase().includes("brave");
+
+        if (event.error === "network" || event.error === "service-not-allowed") {
+          if (isBrave) {
+            setErrorMessage(
+              "Brave Browser mematikan layanan suara Google secara default demi privasi. Buka tab baru: brave://settings/system lalu aktifkan 'Use Google speech recognition services', atau buka SakuKeluarga di Chrome / Safari."
+            );
+          } else {
+            setErrorMessage(
+              "Layanan pengenalan suara memerlukan koneksi internet aktif. Anda juga dapat mengetik kalimat transaksi langsung di bawah."
+            );
+          }
+        } else if (event.error === "not-allowed") {
           setErrorMessage(
-            "Izin mikrofon belum diberikan. Silakan izinkan akses mikrofon di browser Anda (klik ikon gembok di address bar), atau gunakan tombol contoh / ketik di bawah."
-          );
-        } else if (event.error === "network") {
-          setErrorMessage(
-            "Layanan pengenalan suara browser memerlukan koneksi internet aktif. Anda tetap dapat menggunakan tombol contoh atau mengetik kalimat di bawah."
+            "Akses mikrofon diblokir. Silakan klik ikon gembok / pengaturan situs di sebelah address bar browser lalu izinkan Microphone."
           );
         } else if (event.error === "audio-capture") {
           setErrorMessage(
-            "Mikrofon tidak terdeteksi pada komputer / perangkat Anda. Pastikan mikrofon terpasang."
+            "Mikrofon tidak terdeteksi pada Mac Anda. Pastikan mikrofon aktif di System Settings -> Sound -> Input."
           );
         } else if (event.error === "no-speech") {
-          setErrorMessage(
-            "Suara tidak terdengar. Silakan coba lagi dan berbicara lebih dekat ke mikrofon."
-          );
+          if (!latestTranscriptRef.current) {
+            setErrorMessage(
+              "Suara belum terdengar jelas. Silakan tekan tombol mikrofon dan katakan kembali transaksi Anda."
+            );
+          }
         } else if (event.error !== "aborted") {
           setErrorMessage(
-            `Pengenalan suara mengalami kendala (${event.error}). Anda dapat menggunakan tombol contoh atau ketik kalimat di bawah.`
+            `Pengenalan suara mengalami kendala (${event.error}). Anda dapat mencoba lagi atau mengetik kalimat di bawah.`
           );
         }
       };
 
       recognition.onend = () => {
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
         setIsListening(false);
         const recorded = latestTranscriptRef.current.trim();
         if (recorded) {
@@ -315,15 +394,24 @@ export function TransactionModal() {
     } catch (err: any) {
       console.error("Speech start error:", err);
       setIsListening(false);
-      setErrorMessage("Tidak dapat memulai mikrofon. Pastikan izin mikrofon telah diberikan.");
+      setErrorMessage("Tidak dapat memulai mikrofon. Silakan periksa izin mikrofon perangkat Anda.");
     }
   };
 
   const stopListening = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch {}
     }
     setIsListening(false);
+    const recorded = latestTranscriptRef.current.trim();
+    if (recorded) {
+      handleParseVoice(recorded);
+    }
   };
 
   const handleParseVoice = async (textToParse?: string) => {
@@ -341,7 +429,8 @@ export function TransactionModal() {
         setType(parsed.type);
       }
       if (parsed.amount) {
-        setAmount(String(parsed.amount));
+        const cleanAmt = Math.round(Number(parsed.amount));
+        setAmount(String(cleanAmt));
       }
       if (parsed.description) {
         setDescription(parsed.description);
@@ -426,8 +515,8 @@ export function TransactionModal() {
 
         // Reimbursement note encoding if saving to group ledger
         const reimburseNote =
-          targetScope === "family" && isReimbursePending
-            ? encodeReimburseNotes("pending", description)
+          targetScope === "family"
+            ? encodeReceiptAndReimburseNotes(true, isReimbursePending, description)
             : undefined;
 
         // Confirm receipt draft
@@ -442,6 +531,11 @@ export function TransactionModal() {
           group_id: targetScope === "family" ? targetGroupId : undefined,
           items: extractedItems.length > 0 ? extractedItems : undefined,
         });
+
+        toastSuccess(
+          `Struk belanja ${formatRupiah(parsedAmount)} berhasil dicatat!`,
+          "Struk Tersimpan"
+        );
       } else {
         // Standard personal or group transaction creation
         const finalDescription = description.trim()
@@ -452,9 +546,10 @@ export function TransactionModal() {
           ? `Belanja di ${merchantName.trim()}`
           : undefined;
 
+        // Group expense note encodes both receipt status (Ada Nota vs Tanpa Nota) and reimbursement request
         const reimburseNote =
-          targetScope === "family" && isReimbursePending
-            ? encodeReimburseNotes("pending", description)
+          targetScope === "family" && type === "expense"
+            ? encodeReceiptAndReimburseNotes(hasReceipt, hasReceipt && isReimbursePending, description)
             : undefined;
 
         const payload = {
@@ -472,6 +567,11 @@ export function TransactionModal() {
         } else {
           await api.createGroupTransaction(targetGroupId, payload);
         }
+
+        toastSuccess(
+          `${type === "expense" ? "Pengeluaran" : "Pemasukan"} ${formatRupiah(parsedAmount)} berhasil disimpan!`,
+          "Transaksi Disimpan"
+        );
       }
 
       if (options.onSuccess) {
@@ -480,7 +580,9 @@ export function TransactionModal() {
       closeTransactionModal();
       window.dispatchEvent(new CustomEvent("refresh-data"));
     } catch (err: any) {
-      setErrorMessage(err.message || "Gagal menyimpan transaksi.");
+      const msg = err.message || "Gagal menyimpan transaksi.";
+      setErrorMessage(msg);
+      toastError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -494,8 +596,8 @@ export function TransactionModal() {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b-2 border-black bg-white/80 backdrop-blur-md">
           <div>
-            <h2 className={`font-black text-black tracking-tight ${elderlyMode ? "text-xl" : "text-lg"}`}>
-              {elderlyMode ? "CATAT UANG MASUK / KELUAR" : "TAMBAH TRANSAKSI"}
+            <h2 className="font-black text-black tracking-tight text-lg">
+              TAMBAH TRANSAKSI
             </h2>
             <p className="text-xs font-semibold text-slate-600">Pilih metode dan isi rincian transaksi</p>
           </div>
@@ -590,6 +692,11 @@ export function TransactionModal() {
                 <p className="text-[11px] text-slate-700 text-center font-medium italic">
                   Contoh: &ldquo;Catat pengeluaran makan siang dua puluh lima ribu rupiah&rdquo; atau &ldquo;Beli bensin 50 ribu&rdquo;
                 </p>
+                {isBraveBrowser && (
+                  <p className="text-[10px] text-amber-950 bg-amber-100/80 border border-amber-300 rounded-lg p-1.5 text-center font-medium">
+                    Tips Brave Browser: Jika mikrofon gagal memproses suara, aktifkan &ldquo;Use Google speech recognition services&rdquo; di <span className="font-mono font-bold">brave://settings/system</span>.
+                  </p>
+                )}
               </div>
 
               {/* Transcript Textbox & Trigger */}
@@ -709,24 +816,20 @@ export function TransactionModal() {
                       </button>
                     </div>
 
-                    {!receiptId && (
+                    {isScanningOCR ? (
+                      <div className="w-full bg-neo-blue text-white font-black text-xs sm:text-sm py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border-2 border-black shadow-[3px_3px_0px_0px_#000]">
+                        <Loader2 className="w-4 h-4 animate-spin stroke-[2.5]" />
+                        <span>Membaca angka struk secara instan...</span>
+                      </div>
+                    ) : (
                       <button
                         type="button"
                         onClick={handleRunOCR}
                         disabled={isScanningOCR}
                         className="w-full bg-neo-blue hover:bg-blue-600 text-white font-black text-xs sm:text-sm py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border-2 border-black shadow-[3px_3px_0px_0px_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] transition-all disabled:opacity-50"
                       >
-                        {isScanningOCR ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin stroke-[2.5]" />
-                            <span>Membaca angka struk...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                            <span>Pindai Struk & Deteksi Angka</span>
-                          </>
-                        )}
+                        <Sparkles className="w-4 h-4 stroke-[2.5]" />
+                        <span>{receiptId ? "Pindai Ulang Struk" : "Pindai Struk & Deteksi Angka"}</span>
                       </button>
                     )}
 
@@ -988,26 +1091,74 @@ export function TransactionModal() {
                       </p>
                     )}
 
-                    {/* Reimbursement Toggle */}
-                    <div className="p-3 bg-amber-50/90 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_#000]">
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isReimbursePending}
-                          onChange={(e) => setIsReimbursePending(e.target.checked)}
-                          className="mt-0.5 w-4 h-4 rounded border-2 border-black accent-black cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <span className="text-xs font-black text-black flex items-center gap-1.5">
-                            <HandCoins className="w-3.5 h-3.5 text-black stroke-[2.5]" />
-                            <span>Uang Talangan Pribadi (Perlu Reimburse)</span>
-                          </span>
-                          <p className="text-[11px] text-slate-700 font-semibold leading-tight mt-0.5">
-                            Centang jika nota ini Anda talangi pakai uang pribadi dan perlu diganti oleh kas event/tim.
-                          </p>
+                    {/* Receipt Proof Selection (Ada Nota vs Tanpa Nota) */}
+                    {type === "expense" && (
+                      <div className="space-y-2 pt-1">
+                        <label className="text-xs font-black text-black flex items-center justify-between">
+                          <span>Bukti Fisik / Nota Belanja:</span>
+                          <span className="text-[10px] text-slate-600 font-semibold">Syarat reimburse kas</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setHasReceipt(true)}
+                            className={`py-2 px-3 rounded-xl border-2 border-black text-xs font-black transition-all shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] flex items-center justify-center gap-1.5 ${
+                              hasReceipt
+                                ? "bg-emerald-300 text-black"
+                                : "bg-white text-slate-600 hover:bg-slate-100"
+                            }`}
+                          >
+                            <Receipt className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>🧾 Ada Bukti Nota</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHasReceipt(false);
+                              setIsReimbursePending(false);
+                            }}
+                            className={`py-2 px-3 rounded-xl border-2 border-black text-xs font-black transition-all shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] flex items-center justify-center gap-1.5 ${
+                              !hasReceipt
+                                ? "bg-rose-200 text-rose-950"
+                                : "bg-white text-slate-600 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span>🚫 Tanpa Nota</span>
+                          </button>
                         </div>
-                      </label>
-                    </div>
+
+                        {/* Reimbursement Section conditionally enabled */}
+                        {hasReceipt ? (
+                          <div className="p-3 bg-amber-50/90 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_#000]">
+                            <label className="flex items-start gap-2.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isReimbursePending}
+                                onChange={(e) => setIsReimbursePending(e.target.checked)}
+                                className="mt-0.5 w-4 h-4 rounded border-2 border-black accent-black cursor-pointer"
+                              />
+                              <div className="flex-1">
+                                <span className="text-xs font-black text-black flex items-center gap-1.5">
+                                  <HandCoins className="w-3.5 h-3.5 text-black stroke-[2.5]" />
+                                  <span>Ajukan Reimburse (Uang Talangan Pribadi)</span>
+                                </span>
+                                <p className="text-[11px] text-slate-700 font-semibold leading-tight mt-0.5">
+                                  Centang jika belanja ini ditalangi uang pribadi Anda. Saldo kas event baru akan berkurang setelah bendahara mencairkan reimburse.
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 bg-rose-50 border-2 border-black rounded-xl text-xs font-bold text-rose-950 flex items-center gap-2 shadow-[1.5px_1.5px_0px_0px_#000]">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-700 stroke-[2.5]" />
+                            <span>
+                              Tanpa bukti nota, pengeluaran <strong>tidak dapat diajukan reimburse</strong> dan harus dibayar langsung dari kas fisik bendahara.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1111,26 +1262,103 @@ export function TransactionModal() {
                       </p>
                     )}
 
-                    {/* Reimbursement Toggle if Expense */}
+                    {/* Status Bukti Nota: Ada Nota vs Tanpa Nota (Wajib untuk Reimburse Kas Event) */}
                     {type === "expense" && (
-                      <div className="p-3 bg-amber-50/90 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_#000]">
-                        <label className="flex items-start gap-2.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isReimbursePending}
-                            onChange={(e) => setIsReimbursePending(e.target.checked)}
-                            className="mt-0.5 w-4 h-4 rounded border-2 border-black accent-black cursor-pointer"
-                          />
-                          <div className="flex-1">
-                            <span className="text-xs font-black text-black flex items-center gap-1.5">
-                              <HandCoins className="w-3.5 h-3.5 text-black stroke-[2.5]" />
-                              <span>Uang Talangan Pribadi (Perlu Reimburse)</span>
-                            </span>
-                            <p className="text-[11px] text-slate-700 font-semibold leading-tight mt-0.5">
-                              Centang jika biaya ini Anda talangi pakai uang pribadi dan perlu diganti oleh kas event/tim.
+                      <div className="space-y-2.5 pt-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-black text-black flex items-center gap-1.5">
+                            <Receipt className="w-3.5 h-3.5 text-black stroke-[2.5]" />
+                            <span>BUKTI TRANSAKSI (NOTA):</span>
+                          </label>
+                          <span
+                            className={`text-[10px] font-black px-2 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000] ${
+                              hasReceipt
+                                ? "bg-neo-green text-black"
+                                : "bg-rose-200 text-rose-950"
+                            }`}
+                          >
+                            {hasReceipt ? "BISA DIREIMBURSE" : "TIDAK BISA REIMBURSE"}
+                          </span>
+                        </div>
+
+                        {/* Two clear buttons for Ada Nota vs Tanpa Nota */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            disabled={method === "ocr"}
+                            onClick={() => setHasReceipt(true)}
+                            className={`p-2.5 rounded-xl text-left border-2 border-black transition-all ${
+                              hasReceipt
+                                ? "bg-emerald-100 text-black border-2 border-black shadow-[2px_2px_0px_0px_#000] font-black"
+                                : "bg-white text-slate-700 hover:bg-slate-50 font-bold"
+                            } ${method === "ocr" ? "cursor-default" : ""}`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">🧾</span>
+                              <span className="text-xs font-black text-black">Ada Bukti Nota</span>
+                            </div>
+                            <p className="text-[10px] text-slate-600 font-semibold mt-1 leading-tight">
+                              {method === "ocr"
+                                ? "Struk otomatis terlampir via scan."
+                                : "Bukti fisik/foto ada. Sah untuk reimburse."}
                             </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={method === "ocr"}
+                            onClick={() => {
+                              setHasReceipt(false);
+                              setIsReimbursePending(false);
+                            }}
+                            className={`p-2.5 rounded-xl text-left border-2 border-black transition-all ${
+                              !hasReceipt
+                                ? "bg-rose-100 text-black border-2 border-black shadow-[2px_2px_0px_0px_#000] font-black"
+                                : "bg-white text-slate-700 hover:bg-slate-50 font-bold"
+                            } ${method === "ocr" ? "opacity-40 cursor-not-allowed" : ""}`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">🚫</span>
+                              <span className="text-xs font-black text-black">Tanpa Nota</span>
+                            </div>
+                            <p className="text-[10px] text-slate-600 font-semibold mt-1 leading-tight">
+                              Tidak ada struk. Tidak bisa reimburse.
+                            </p>
+                          </button>
+                        </div>
+
+                        {/* Reimbursement Section */}
+                        {hasReceipt ? (
+                          <div className="p-3 bg-amber-50/90 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_#000]">
+                            <label className="flex items-start gap-2.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isReimbursePending}
+                                onChange={(e) => setIsReimbursePending(e.target.checked)}
+                                className="mt-0.5 w-4 h-4 rounded border-2 border-black accent-black cursor-pointer"
+                              />
+                              <div className="flex-1">
+                                <span className="text-xs font-black text-black flex items-center gap-1.5">
+                                  <HandCoins className="w-3.5 h-3.5 text-black stroke-[2.5]" />
+                                  <span>Uang Talangan Pribadi (Minta Reimburse)</span>
+                                </span>
+                                <p className="text-[11px] text-slate-700 font-semibold leading-tight mt-0.5">
+                                  Centang jika Anda membayar dengan uang pribadi dan bendahara kas event perlu menggantinya.
+                                </p>
+                              </div>
+                            </label>
                           </div>
-                        </label>
+                        ) : (
+                          <div className="p-3 bg-rose-50 border-2 border-rose-400 rounded-xl text-[11px] font-bold text-rose-950 flex items-start gap-2 shadow-[1.5px_1.5px_0px_0px_#000]">
+                            <span className="text-base flex-shrink-0">⚠️</span>
+                            <div>
+                              <p className="font-black text-rose-950">Aturan Kas Event & Tim:</p>
+                              <p className="text-slate-700 font-medium leading-tight mt-0.5">
+                                Pengeluaran tanpa bukti nota <strong>TIDAK DAPAT diajukan reimburse</strong>. Biaya dicatat sebagai pengeluaran kas langsung tanpa kuitansi.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1146,9 +1374,9 @@ export function TransactionModal() {
                     type === "expense"
                       ? "bg-rose-400 text-black font-black border-2 border-black shadow-[2px_2px_0px_0px_#000]"
                       : "text-black hover:bg-slate-100 border-2 border-transparent"
-                  } ${elderlyMode ? "py-3 text-base" : ""}`}
+                  }`}
                 >
-                  {elderlyMode ? "Uang Keluar" : "Pengeluaran (-)"}
+                  Pengeluaran (-)
                 </button>
                 <button
                   type="button"
@@ -1157,9 +1385,9 @@ export function TransactionModal() {
                     type === "income"
                       ? "bg-neo-green text-black border-2 border-black shadow-[2px_2px_0px_0px_#000]"
                       : "text-black hover:bg-slate-100 border-2 border-transparent"
-                  } ${elderlyMode ? "py-3 text-base" : ""}`}
+                  }`}
                 >
-                  {elderlyMode ? "Uang Masuk" : "Pemasukan (+)"}
+                  Pemasukan (+)
                 </button>
               </div>
 
@@ -1191,9 +1419,7 @@ export function TransactionModal() {
                       setAmount(digits);
                     }}
                     placeholder="0"
-                    className={`w-full bg-white border-2 border-black rounded-2xl pl-12 pr-4 py-3.5 text-xl sm:text-2xl font-black text-black shadow-[3px_3px_0px_0px_#000] outline-none transition-all ${
-                      elderlyMode ? "py-4 text-2xl" : ""
-                    }`}
+                    className="w-full bg-white border-2 border-black rounded-2xl pl-12 pr-4 py-3.5 text-xl sm:text-2xl font-black text-black shadow-[3px_3px_0px_0px_#000] outline-none transition-all"
                   />
                 </div>
 
@@ -1335,9 +1561,9 @@ export function TransactionModal() {
             <button
               type="submit"
               disabled={isSubmitting || isScanningOCR || isParsingVoice}
-              className={`w-full bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black rounded-xl py-3.5 px-4 flex items-center justify-center gap-2 border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all ${
+              className={`w-full bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black rounded-xl py-3.5 px-4 flex items-center justify-center gap-2 border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all text-sm ${
                 isSubmitting || isScanningOCR || isParsingVoice ? "opacity-70 cursor-not-allowed" : ""
-              } ${elderlyMode ? "py-4 text-lg" : "text-sm"}`}
+              }`}
             >
               <Check className="w-5 h-5 stroke-[3]" />
               <span>

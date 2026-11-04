@@ -259,6 +259,7 @@ class GroupTransactionService:
         summary = TransactionRepository.get_group_summary(db, group_id, start_date, end_date)
         total_income = summary["total_income"]
         total_expense = summary["total_expense"]
+        pending_reimbursement = summary.get("pending_reimbursement", Decimal("0.00"))
         net_balance = summary["net_balance"]
 
         # Category breakdowns
@@ -315,6 +316,7 @@ class GroupTransactionService:
             group_name=group.name,
             total_income=total_income,
             total_expense=total_expense,
+            pending_reimbursement=pending_reimbursement,
             net_balance=net_balance,
             recent_transactions=[TransactionResponse.model_validate(tx) for tx in recent_txs],
             expense_by_category=expense_breakdown,
@@ -335,21 +337,33 @@ class GroupTransactionService:
         period_name: str = "custom",
     ) -> GroupReportResponse:
         """Generate complete shared financial report for the family group."""
+        clean_start = (
+            start_date.astimezone(timezone.utc).replace(tzinfo=None)
+            if start_date.tzinfo is not None
+            else start_date
+        )
+        clean_end = (
+            end_date.astimezone(timezone.utc).replace(tzinfo=None)
+            if end_date.tzinfo is not None
+            else end_date
+        )
+
         cls._ensure_active_membership(db, group_id, user.id)
         group = GroupRepository.get_by_id(db, group_id)
         if not group:
             raise HTTPException(status_code=404, detail="Group not found.")
 
         # Summary
-        summary = TransactionRepository.get_group_summary(db, group_id, start_date, end_date)
+        summary = TransactionRepository.get_group_summary(db, group_id, clean_start, clean_end)
         total_income = summary["total_income"]
         total_expense = summary["total_expense"]
+        pending_reimbursement = summary.get("pending_reimbursement", Decimal("0.00"))
         net_savings = total_income - total_expense
         savings_rate = float((net_savings / total_income * 100)) if total_income > 0 else 0.0
 
         # Category breakdowns
         expense_rows = TransactionRepository.get_group_category_breakdown(
-            db, group_id, "expense", start_date, end_date
+            db, group_id, "expense", clean_start, clean_end
         )
         expense_breakdown = [
             CategoryBreakdownItem(
@@ -365,7 +379,7 @@ class GroupTransactionService:
         ]
 
         income_rows = TransactionRepository.get_group_category_breakdown(
-            db, group_id, "income", start_date, end_date
+            db, group_id, "income", clean_start, clean_end
         )
         income_breakdown = [
             CategoryBreakdownItem(
@@ -382,11 +396,11 @@ class GroupTransactionService:
 
         # Monthly trends
         stmt = (
-            select(Transaction.type, Transaction.amount, Transaction.transaction_date)
+            select(Transaction.type, Transaction.amount, Transaction.transaction_date, Transaction.notes)
             .where(
                 Transaction.group_id == group_id,
-                Transaction.transaction_date >= start_date,
-                Transaction.transaction_date <= end_date,
+                Transaction.transaction_date >= clean_start,
+                Transaction.transaction_date <= clean_end,
             )
             .order_by(Transaction.transaction_date.asc())
         )
@@ -394,12 +408,15 @@ class GroupTransactionService:
         monthly_data: dict[str, dict[str, Decimal]] = defaultdict(
             lambda: {"income": Decimal("0.00"), "expense": Decimal("0.00")}
         )
-        for tx_type, amount, tx_date in tx_rows:
+        for tx_type, amount, tx_date, notes in tx_rows:
             m_key = tx_date.strftime("%Y-%m")
             if tx_type == "income":
                 monthly_data[m_key]["income"] += amount
             elif tx_type == "expense":
-                monthly_data[m_key]["expense"] += amount
+                # Realized expense only (un-reimbursed talangan does not reduce event cash yet)
+                is_pending = bool(notes and "[REIMBURSE_PENDING]" in notes)
+                if not is_pending:
+                    monthly_data[m_key]["expense"] += amount
 
         monthly_trends = [
             MonthlyTrendItem(
@@ -432,6 +449,7 @@ class GroupTransactionService:
             end_date=end_date,
             total_income=total_income,
             total_expense=total_expense,
+            pending_reimbursement=pending_reimbursement,
             net_savings=net_savings,
             savings_rate=round(savings_rate, 2),
             expense_by_category=expense_breakdown,

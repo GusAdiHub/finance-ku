@@ -172,29 +172,6 @@ body {
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* Elderly-friendly mode classes */
-html.elderly-mode {
-  font-size: 18px;
-}
-
-html.elderly-mode body {
-  font-weight: 600;
-  line-height: 1.6;
-}
-
-html.elderly-mode button,
-html.elderly-mode input,
-html.elderly-mode select {
-  min-height: 52px;
-  font-size: 1.1rem;
-}
-
-html.elderly-mode .card-container {
-  border-width: 3px;
-  border-color: #000000;
-  box-shadow: 6px 6px 0px 0px #000000;
-}
-
 /* Utility Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
@@ -204,3 +181,19 @@ html.elderly-mode .card-container {
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out forwards;
 }
+
+@keyframes slideDownToast {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -18px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.animate-toast-slide {
+  animation: slideDownToast 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

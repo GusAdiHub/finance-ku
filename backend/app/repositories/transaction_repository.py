@@ -2,7 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, not_, or_, select
 from sqlalchemy.orm import Session, selectinload
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -280,13 +280,44 @@ class TransactionRepository:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> Dict[str, Decimal]:
-        """Calculate total income, total expense, and net balance for a shared family group."""
+        """Calculate total income, realized total expense, pending reimbursement, and net balance for a shared family group.
+
+        Accounting Rule for Event/Team Cash:
+        Transactions marked with '[REIMBURSE_PENDING]' are member personal advances (talangan) and have NOT
+        reduced cash yet. They only reduce net_balance and count toward total_expense once reimbursed
+        ('[REIMBURSED]') by the treasurer/admin.
+        """
         income_case = case((Transaction.type == "income", Transaction.amount), else_=Decimal("0.00"))
-        expense_case = case((Transaction.type == "expense", Transaction.amount), else_=Decimal("0.00"))
+
+        realized_expense_case = case(
+            (
+                and_(
+                    Transaction.type == "expense",
+                    or_(
+                        Transaction.notes.is_(None),
+                        not_(Transaction.notes.ilike("%[REIMBURSE_PENDING]%")),
+                    ),
+                ),
+                Transaction.amount,
+            ),
+            else_=Decimal("0.00"),
+        )
+
+        pending_reimburse_case = case(
+            (
+                and_(
+                    Transaction.type == "expense",
+                    Transaction.notes.ilike("%[REIMBURSE_PENDING]%"),
+                ),
+                Transaction.amount,
+            ),
+            else_=Decimal("0.00"),
+        )
 
         stmt = select(
             func.coalesce(func.sum(income_case), Decimal("0.00")).label("total_income"),
-            func.coalesce(func.sum(expense_case), Decimal("0.00")).label("total_expense"),
+            func.coalesce(func.sum(realized_expense_case), Decimal("0.00")).label("total_expense"),
+            func.coalesce(func.sum(pending_reimburse_case), Decimal("0.00")).label("pending_reimbursement"),
         ).where(Transaction.group_id == group_id)
 
         if start_date:
@@ -297,11 +328,13 @@ class TransactionRepository:
         row = db.execute(stmt).one()
         total_income = Decimal(str(row.total_income))
         total_expense = Decimal(str(row.total_expense))
+        pending_reimbursement = Decimal(str(row.pending_reimbursement))
         net_balance = total_income - total_expense
 
         return {
             "total_income": total_income,
             "total_expense": total_expense,
+            "pending_reimbursement": pending_reimbursement,
             "net_balance": net_balance,
         }
 
@@ -313,7 +346,11 @@ class TransactionRepository:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
-        """Calculate amount aggregated by category for group transactions."""
+        """Calculate amount aggregated by category for group transactions.
+
+        For expense, only realized expenses (paid directly from cash or settled reimbursements)
+        are broken down so that the breakdown sum matches total_expense.
+        """
         stmt = (
             select(
                 Category.id.label("category_id"),
@@ -329,6 +366,14 @@ class TransactionRepository:
                 Transaction.type == transaction_type,
             )
         )
+
+        if transaction_type == "expense":
+            stmt = stmt.where(
+                or_(
+                    Transaction.notes.is_(None),
+                    not_(Transaction.notes.ilike("%[REIMBURSE_PENDING]%")),
+                )
+            )
 
         if start_date:
             stmt = stmt.where(Transaction.transaction_date >= start_date)

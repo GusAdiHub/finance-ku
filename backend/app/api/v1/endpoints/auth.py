@@ -41,14 +41,14 @@ def register(
     "/login",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="User login with email and password",
+    summary="User login with username or email and password",
 )
 def login(
     request: UserLoginRequest,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
-    """Authenticate user with email and password and return access token."""
-    user = AuthService.authenticate(db, request.email, request.password)
+    """Authenticate user with username or email and password and return access token."""
+    user = AuthService.authenticate(db, request.identifier, request.password)
     return AuthService.create_token_response(user)
 
 

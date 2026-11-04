@@ -1,7 +1,7 @@
 {
-  "name": "SakuKeluarga — Personal & Family Finance",
-  "short_name": "SakuKeluarga",
-  "description": "Aplikasi pencatat keuangan pribadi dan keluarga berbasis Shared Ledger",
+  "name": "SakuKu — Personal & Event Finance",
+  "short_name": "SakuKu",
+  "description": "Aplikasi pencatat keuangan pribadi dan event berbasis Shared Ledger",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F8FAFC",

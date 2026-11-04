@@ -19,8 +19,6 @@ interface AuthContextType {
   userGroups: Group[];
   refreshUser: () => Promise<void>;
   refreshGroups: () => Promise<void>;
-  elderlyMode: boolean;
-  toggleElderlyMode: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,23 +54,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeScope, setActiveScope] = useState<"personal" | "family">("personal");
   const [userGroups, setUserGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [elderlyMode, setElderlyMode] = useState<boolean>(false);
 
   useEffect(() => {
     // Load local storage preferences
     const storedToken = localStorage.getItem("token");
     const storedScope = localStorage.getItem("active_scope") as "personal" | "family" | null;
-    const storedElderly = localStorage.getItem("elderly_mode") === "true";
+
+    // Clean up legacy elderly mode if present in browser
+    localStorage.removeItem("elderly_mode");
+    if (typeof document !== "undefined") {
+      document.documentElement.classList.remove("elderly-mode");
+    }
 
     if (storedToken) {
       setToken(storedToken);
     }
     if (storedScope) {
       setActiveScope(storedScope);
-    }
-    if (storedElderly) {
-      setElderlyMode(true);
-      document.documentElement.classList.add("elderly-mode");
     }
 
     initAuth(storedToken);
@@ -171,17 +169,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("active_scope", scope);
   };
 
-  const toggleElderlyMode = () => {
-    const nextState = !elderlyMode;
-    setElderlyMode(nextState);
-    localStorage.setItem("elderly_mode", String(nextState));
-    if (nextState) {
-      document.documentElement.classList.add("elderly-mode");
-    } else {
-      document.documentElement.classList.remove("elderly-mode");
-    }
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -199,8 +186,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userGroups,
         refreshUser,
         refreshGroups,
-        elderlyMode,
-        toggleElderlyMode,
       }}
     >
       {children}

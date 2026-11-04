@@ -48,7 +48,6 @@ export default function DashboardPage() {
     activeScope,
     selectedGroup,
     refreshGroups,
-    elderlyMode,
   } = useAuth();
   const { openTransactionModal } = useModal();
 
@@ -215,12 +214,8 @@ export default function DashboardPage() {
               </span>
             </span>
           </div>
-          <h1 className={`font-black text-black mt-2 tracking-tight ${elderlyMode ? "text-2xl" : "text-xl sm:text-2xl"}`}>
-            {elderlyMode
-              ? isFamily
-                ? `Kas Tim & Event ${selectedGroup?.name || ""}`
-                : `Keuangan Pribadi Anda`
-              : isFamily
+          <h1 className="font-black text-black mt-2 tracking-tight text-xl sm:text-2xl">
+            {isFamily
               ? `Manajemen Kas & Nota: ${selectedGroup?.name || "Tim / Event"}`
               : `Ringkasan Finansial Pribadi`}
           </h1>
@@ -247,7 +242,7 @@ export default function DashboardPage() {
             className="bg-neo-yellow hover:bg-[#FDE047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] text-black font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all"
           >
             <Plus className="w-4 h-4 stroke-[3] text-black" />
-            <span className="text-black">{elderlyMode ? "Catat Uang" : "Catat Transaksi"}</span>
+            <span className="text-black">Catat Transaksi</span>
           </button>
         </div>
       </div>
@@ -507,62 +502,96 @@ export default function DashboardPage() {
 
       {/* Summary Stat Cards */}
       {dashboardData && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Net Balance / Saldo Kas */}
-          <div className="bg-neo-yellow/90 backdrop-blur-xl text-black p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.8),4px_4px_0px_0px_#000] flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-black">
-                {isFamily ? "Saldo Buku Kas" : elderlyMode ? "Sisa Uang Anda" : "Sisa Saldo Bersih"}
-              </span>
-              <div className="w-9 h-9 rounded-xl bg-white/90 backdrop-blur-md border-2 border-black flex items-center justify-center text-black shadow-[2px_2px_0px_0px_#000]">
-                <Wallet className="w-5 h-5 stroke-[2.5]" />
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Net Balance / Saldo Kas */}
+            <div className="bg-neo-yellow/90 backdrop-blur-xl text-black p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.8),4px_4px_0px_0px_#000] flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-black">
+                  {isFamily ? "Saldo Buku Kas" : "Sisa Saldo Bersih"}
+                </span>
+                <div className="w-9 h-9 rounded-xl bg-white/90 backdrop-blur-md border-2 border-black flex items-center justify-center text-black shadow-[2px_2px_0px_0px_#000]">
+                  <Wallet className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="my-3">
+                <p className="font-black tracking-tight text-black text-2xl sm:text-3xl">
+                  {formatRupiah(dashboardData.net_balance)}
+                </p>
+                <p className="text-[11px] font-semibold text-slate-800 mt-1">
+                  {isFamily ? "Kas riil fisik / rekening event" : "Selisih pemasukan dan pengeluaran"}
+                </p>
               </div>
             </div>
-            <div className="my-3">
-              <p className={`font-black tracking-tight text-black ${elderlyMode ? "text-3xl" : "text-2xl sm:text-3xl"}`}>
-                {formatRupiah(dashboardData.net_balance)}
-              </p>
-              <p className="text-[11px] font-semibold text-slate-800 mt-1">
-                {isFamily ? "Kas fisik / rekening event" : "Selisih pemasukan dan pengeluaran"}
-              </p>
+
+            {/* Income / Iuran Kas */}
+            <div className="bg-emerald-100/80 backdrop-blur-xl text-black p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000] flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-emerald-950">
+                  {isFamily ? "Pemasukan / Iuran Kas" : "Total Pemasukan"}
+                </span>
+                <div className="w-9 h-9 rounded-xl bg-white/90 backdrop-blur-md border-2 border-black flex items-center justify-center text-emerald-800 shadow-[2px_2px_0px_0px_#000]">
+                  <TrendingUp className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="my-3">
+                <p className="font-black text-emerald-950 tracking-tight text-2xl sm:text-3xl">
+                  {formatRupiah(dashboardData.total_income)}
+                </p>
+                <p className="text-[11px] font-semibold text-emerald-900 mt-1">Bulan berjalan</p>
+              </div>
+            </div>
+
+            {/* Expense / Pengeluaran Terpakai */}
+            <div className="bg-rose-100/80 backdrop-blur-xl text-black p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000] flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-rose-950">
+                  {isFamily ? "Kas Terpakai / Belanja" : "Total Pengeluaran"}
+                </span>
+                <div className="w-9 h-9 rounded-xl bg-white/90 backdrop-blur-md border-2 border-black flex items-center justify-center text-rose-800 shadow-[2px_2px_0px_0px_#000]">
+                  <TrendingDown className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="my-3">
+                <p className="font-black text-rose-950 tracking-tight text-2xl sm:text-3xl">
+                  {formatRupiah(dashboardData.total_expense)}
+                </p>
+                <p className="text-[11px] font-semibold text-rose-900 mt-1">
+                  {isFamily ? "Kas langsung & nota yang sudah direimburse" : "Bulan berjalan"}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Income / Iuran Kas */}
-          <div className="bg-emerald-100/80 backdrop-blur-xl text-black p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000] flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-emerald-950">
-                {isFamily ? "Pemasukan / Iuran Kas" : elderlyMode ? "Total Uang Masuk" : "Total Pemasukan"}
-              </span>
-              <div className="w-9 h-9 rounded-xl bg-white/90 backdrop-blur-md border-2 border-black flex items-center justify-center text-emerald-800 shadow-[2px_2px_0px_0px_#000]">
-                <TrendingUp className="w-5 h-5 stroke-[2.5]" />
+          {/* Pending Reimbursement Alert Card for Event Cash */}
+          {isFamily && Boolean(Number((dashboardData as any)?.pending_reimbursement || 0)) && (
+            <div className="bg-amber-100/90 backdrop-blur-xl p-4 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),3px_3px_0px_0px_#000] flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-400 border-2 border-black flex items-center justify-center text-black font-black shadow-[1.5px_1.5px_0px_0px_#000] flex-shrink-0">
+                  <HandCoins className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs font-black uppercase text-amber-950">
+                      Talangan Menunggu Reimburse:
+                    </p>
+                    <span className="text-xs font-black bg-amber-400 text-black px-2 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
+                      {formatRupiah(Number((dashboardData as any).pending_reimbursement))}
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-semibold text-slate-700 mt-0.5">
+                    Biaya ditalangi oleh uang pribadi panitia. Saldo kas event baru akan berkurang setelah Anda klik tombol <em>Reimburse</em> pada nota.
+                  </p>
+                </div>
               </div>
+              <Link
+                href="/transactions"
+                className="text-xs font-black bg-white hover:bg-amber-200 text-black px-3.5 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all text-center flex-shrink-0"
+              >
+                Periksa Nota Talangan →
+              </Link>
             </div>
-            <div className="my-3">
-              <p className={`font-black text-emerald-950 tracking-tight ${elderlyMode ? "text-3xl" : "text-2xl sm:text-3xl"}`}>
-                {formatRupiah(dashboardData.total_income)}
-              </p>
-              <p className="text-[11px] font-semibold text-emerald-900 mt-1">Bulan berjalan</p>
-            </div>
-          </div>
-
-          {/* Expense / Pengeluaran Nota */}
-          <div className="bg-rose-100/80 backdrop-blur-xl text-black p-5 rounded-2xl border-2 border-black shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.9),4px_4px_0px_0px_#000] flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-rose-950">
-                {isFamily ? "Pengeluaran / Nota Belanja" : elderlyMode ? "Total Uang Keluar" : "Total Pengeluaran"}
-              </span>
-              <div className="w-9 h-9 rounded-xl bg-white/90 backdrop-blur-md border-2 border-black flex items-center justify-center text-rose-800 shadow-[2px_2px_0px_0px_#000]">
-                <TrendingDown className="w-5 h-5 stroke-[2.5]" />
-              </div>
-            </div>
-            <div className="my-3">
-              <p className={`font-black text-rose-950 tracking-tight ${elderlyMode ? "text-3xl" : "text-2xl sm:text-3xl"}`}>
-                {formatRupiah(dashboardData.total_expense)}
-              </p>
-              <p className="text-[11px] font-semibold text-rose-900 mt-1">Bulan berjalan</p>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -701,7 +730,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <h3 className="font-black text-black text-sm sm:text-base flex items-center gap-2">
               <Receipt className="w-4 h-4 text-black stroke-[2.5]" />
-              <span>{elderlyMode ? "Catatan Terbaru" : "Transaksi & Setoran Nota Terbaru"}</span>
+              <span>Transaksi & Setoran Nota Terbaru</span>
             </h3>
             <Link
               href="/transactions"
@@ -733,9 +762,20 @@ export default function DashboardPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className={`font-black text-black truncate ${elderlyMode ? "text-base" : "text-xs sm:text-sm"}`}>
+                          <p className="font-black text-black truncate text-xs sm:text-sm">
                             {tx.category?.name || "Lain-lain"}
                           </p>
+                          {isFamily && isExpense && (
+                            (reimburse.hasReceipt || tx.input_method === "ocr") ? (
+                              <span className="text-[9px] bg-emerald-100 text-emerald-950 font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
+                                🧾 ADA NOTA
+                              </span>
+                            ) : reimburse.noReceipt ? (
+                              <span className="text-[9px] bg-rose-100 text-rose-950 font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
+                                🚫 TANPA NOTA
+                              </span>
+                            ) : null
+                          )}
                           {reimburse.isPending && (
                             <span className="text-[9px] bg-amber-400 text-black font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
                               PERLU REIMBURSE
@@ -744,6 +784,11 @@ export default function DashboardPage() {
                           {reimburse.isSettled && (
                             <span className="text-[9px] bg-neo-green text-black font-black px-1.5 py-0.5 rounded border border-black shadow-[1px_1px_0px_0px_#000]">
                               DIREIMBURSE
+                            </span>
+                          )}
+                          {isFamily && isExpense && reimburse.noReceipt && (
+                            <span className="text-[9px] bg-slate-200 text-slate-800 font-bold px-1.5 py-0.5 rounded border border-slate-400">
+                              TIDAK BISA REIMBURSE
                             </span>
                           )}
                         </div>
@@ -755,9 +800,9 @@ export default function DashboardPage() {
 
                     <div className="text-right flex-shrink-0">
                       <p
-                        className={`font-black ${
+                        className={`font-black text-xs sm:text-sm ${
                           isExpense ? "text-rose-700" : "text-emerald-700"
-                        } ${elderlyMode ? "text-lg" : "text-xs sm:text-sm"}`}
+                        }`}
                       >
                         {isExpense ? "-" : "+"}
                         {formatRupiah(tx.amount)}

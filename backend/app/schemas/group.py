@@ -109,6 +109,7 @@ class GroupDashboardResponse(BaseModel):
     group_name: str
     total_income: Decimal
     total_expense: Decimal
+    pending_reimbursement: Optional[Decimal] = Decimal("0.00")
     net_balance: Decimal
     recent_transactions: List[TransactionResponse]
     expense_by_category: List[CategoryBreakdownItem]
@@ -128,6 +129,7 @@ class GroupReportResponse(BaseModel):
     end_date: datetime
     total_income: Decimal
     total_expense: Decimal
+    pending_reimbursement: Optional[Decimal] = Decimal("0.00")
     net_savings: Decimal
     savings_rate: float
     expense_by_category: List[CategoryBreakdownItem]
