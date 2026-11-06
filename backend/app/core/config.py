@@ -20,9 +20,9 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Database settings
-    DB_HOST: str = "127.0.0.1"
-    DB_PORT: int = 3306
-    DB_USER: str = "root"
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    DB_USER: str = "postgres"
     DB_PASSWORD: str = ""
     DB_NAME: str = "finance_tracker"
     DATABASE_URL: Optional[str] = None
@@ -47,15 +47,21 @@ class Settings(BaseSettings):
 
     @computed_field
     def sync_database_url(self) -> str:
-        """Returns the synchronized SQLAlchemy MySQL database URL."""
+        """Returns the synchronized SQLAlchemy PostgreSQL database URL."""
         if self.DATABASE_URL:
-            # Ensure pymysql driver is specified if a raw mysql:// is provided
-            if self.DATABASE_URL.startswith("mysql://"):
-                return self.DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
+            # Ensure psycopg driver is specified if a raw postgresql:// is provided
+            if self.DATABASE_URL.startswith("postgresql://"):
+                return self.DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
             return self.DATABASE_URL
+        # Build URL from individual components
+        if self.DB_PASSWORD:
+            return (
+                f"postgresql+psycopg://{self.DB_USER}:{self.DB_PASSWORD}@"
+                f"{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            )
         return (
-            f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@"
-            f"{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+            f"postgresql+psycopg://{self.DB_USER}@"
+            f"{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
 

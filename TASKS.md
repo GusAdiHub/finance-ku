@@ -105,3 +105,84 @@
     - Notifikasi melayang bersih di bagian atas layar saat transaksi berhasil disimpan (manual, OCR, maupun input suara).
     - Menampilkan ringkasan jelas (tipe transaksi, nominal Rupiah, dan status nota) dengan auto-dismiss 3.2 detik dan tombol tutup manual.
     - Terintegrasi juga pada aksi hapus transaksi, persetujuan reimburse nota, serta ekspor file laporan.
+- [ ] **Tahap 11 — SakuKu Mobile (Flutter Android Offline-First)**
+  - [x] **Fase 1: Core Foundation & Design System Setup**
+    - Konfigurasi Constants (`api_endpoints.dart`, `app_colors.dart`, `app_constants.dart`).
+    - Desain Neobrutalism Clean (`app_theme.dart`, `text_styles.dart`).
+    - Format uang Rupiah & Tanggal Indonesia (`currency_formatter.dart`, `date_formatter.dart`).
+    - Model Error & Failure (`exceptions.dart`, `failures.dart`).
+    - Enkripsi Kredensial via Keystore (`secure_storage_service.dart`).
+    - Network Layer Dio dengan Auth, Error (401 Resilient), dan Logging Interceptors (`dio_client.dart`, `network_info.dart`).
+    - Database Lokal SQLite Drift (`app_database.dart`, tabel `LocalTransactions`, `LocalCategories`, `SyncMetadata`, `TransactionsDao` dengan Local Aggregations & Tombstone Pattern, `CategoriesDao`).
+    - Navigasi & Entrypoint (`app_router.dart`, `app.dart`, `main.dart`).
+    - Unit tests foundation (`currency_formatter_test.dart`, `date_formatter_test.dart`, `widget_test.dart`).
+  - [x] **Fase 2: Autentikasi & Akun Pengguna**
+    - Domain Entity (`user_entity.dart`) & Repository contract (`auth_repository.dart`).
+    - DTO Models (`user_model.dart`, `auth_token_model.dart`).
+    - DataSources: `AuthRemoteDataSource` (`/auth/login`, `/auth/register`, `/auth/logout`, `/auth/me`, `/auth/change-password`) & `AuthLocalDataSource` (Keystore token persistence).
+    - Repository Implementation (`auth_repository_impl.dart`).
+    - Riverpod State Controller (`auth_controller.dart`).
+    - UI Screens Neobrutalism: `LoginScreen` (dengan toggle password & checkbox "Ingat username di perangkat ini"), `RegisterScreen` (nama, email opsional, kata sandi min 8 karakter), `ProfileScreen` (informasi akun, ganti kata sandi, logout aman).
+    - GoRouter Auth Guard (`RouterNotifier` dengan auto-redirect berdasarkan `authControllerProvider`).
+    - Unit & Widget tests: `user_model_test.dart`, `auth_token_model_test.dart`, `widget_test.dart`.
+  - [x] **Fase 3: Modul Kategori Transaksi**
+    - Domain Entity (`category_entity.dart`) & Repository contract (`category_repository.dart`).
+    - DTO Models (`category_model.dart`).
+    - DataSources: `CategoryRemoteDataSource` (`GET /categories`, `POST /categories`, `DELETE /categories/{id}`) & `CategoryLocalDataSource` (cache reaktif dengan default system categories).
+    - Repository Implementation (`category_repository_impl.dart`).
+    - Riverpod State Controller (`categories_controller.dart`).
+    - UI Screen & Modal Neobrutalism: `CategoriesScreen` (tab Pemasukan & Pengeluaran, pembedaan visual gembok kategori sistem vs badge kustom), `_AddCategorySheet` (pemilihan jenis, palet warna, dan ikon).
+    - Unit tests: `category_model_test.dart`, `category_local_datasource_test.dart`.
+  - [x] **Fase 4: Offline-First Transaction Engine**
+    - Domain Entity (`transaction_entity.dart` dengan pemetaan dual-ID: local UUID v4 `id` & server `remoteId`, nominal desimal, status siklus sinkronisasi `pending_create`, `pending_update`, `pending_delete`, `synced`, `failed`).
+    - Repository contract (`transaction_repository.dart`).
+    - DTO Model (`transaction_model.dart`) dengan deserialisasi respons FastAPI dan nested `CategoryModel`.
+    - DataSources: `TransactionRemoteDataSource` (`GET /transactions/me`, `POST /transactions`, `PUT /transactions/{id}`, `DELETE /transactions/{id}`) & `TransactionLocalDataSource` (pencatatan instan zero-latency, reactive stream controller, pola penghapusan *Tombstone* soft-delete saat offline, dan antrean sinkronisasi).
+    - Repository Implementation (`transaction_repository_impl.dart`) yang mengutamakan penyimpanan instan ke local storage dan memicu sinkronisasi latar belakang non-blocking jika online.
+    - Riverpod State Controller (`transaction_list_controller.dart`).
+    - UI Neobrutalism: `TransactionsScreen` (pencarian teks dinamis, filter chip Semua/Pengeluaran/Pemasukan, indikator error, tombol sinkronisasi manual), `TransactionItemCard` (avatar kategori, format Rupiah, badge status sinkronisasi), `TransactionDetailScreen` (banner nominal, rincian transaksi lengkap, dialog konfirmasi hapus berstatus tombstone), `TransactionFormModal` (bottom sheet cepat dengan toggle tipe transaksi, dropdown kategori reaktif, input nominal numerik, dan date picker).
+    - GoRouter integration: Rute `/app/transactions` dan `/app/transactions/detail`.
+    - Unit tests: `transaction_model_test.dart`, `transaction_local_datasource_test.dart`.
+  - [x] **Fase 5: Two-Way Synchronization Engine**
+    - Domain Entities (`sync_result.dart`, `sync_state.dart` dengan status `idle`, `syncing`, `success`, `error`, `paused`, metrik pending, dan konektivitas).
+    - Service contract (`sync_engine.dart`).
+    - Implementation (`sync_engine_impl.dart`):
+      - **Fase Push:** Eksekusi antrean `pending_create` (kirim ke server, assign `remoteId`, set `synced`), `pending_update` (kirim PATCH delta, set `synced`), dan `pending_delete` (*Tombstone pattern* — kirim DELETE ke server lalu hapus baris SQLite fisik).
+      - **Fase Pull & Reconcile:** Tarik kategori (`GET /categories`) & transaksi terbaru (`GET /transactions`), rekonsiliasi ke Drift SQLite dengan aturan *Client Intent Wins* (tidak menimpa record yang sedang berstatus `pending_update` / `pending_delete`).
+      - **Connectivity Listener & Auto-Sync:** Deteksi pemulihan jaringan online dari `connectivity_plus` dengan debounce timer untuk memicu sinkronisasi otomatis di latar belakang.
+      - **Resiliensi Token Kedaluwarsa (HTTP 401):** Menjeda engine sinkronisasi tanpa pernah menghapus database lokal SQLite sehingga data transaksi offline tetap utuh sampai pengguna login kembali.
+    - Riverpod Providers & Controller (`sync_controller.dart`, `syncEngineProvider`, `syncControllerProvider`).
+    - UI Neobrutalism Widgets: `SyncStatusIndicator` (badge status interaktif pada AppBar dengan modal rincian sinkronisasi dan trigger manual), `SyncBanner` (banner adaptif saat mode offline, sesi expired, atau pending sync).
+    - Integrasi AppBar pada `TransactionsScreen` dan `DashboardHomeScreen`.
+    - Unit & Integration tests: `sync_result_test.dart`, `sync_engine_test.dart` (pengujian push create, push update, tombstone delete, pull reconcile, offline mode, dan HTTP 401 session expiry safety).
+  - [x] **Fase 6: Dashboard & Laporan Keuangan**
+    - Domain Entities Dashboard & Reports (`dashboard_data.dart`, `category_breakdown_item.dart`, `period_filter.dart`, `financial_report.dart`, `monthly_trend_item.dart`).
+    - Repository contracts: `DashboardRepository` dan `ReportRepository`.
+    - Local Aggregations Engine (`dashboard_repository_impl.dart`, `report_repository_impl.dart`):
+      - Kalkulasi instan 0ms dari SQLite lokal tanpa request jaringan.
+      - Agregasi Saldo Bersih (`Income - Expense`), Total Pemasukan, dan Total Pengeluaran.
+      - Kalkulasi Rasio Tabungan (*Savings Rate*): `((Income - Expense) / Income) * 100`.
+      - Agregasi pengeluaran per kategori dengan nominal Rupiah dan persentase proporsional.
+      - Kalkulasi tren historis 6 bulan terakhir.
+    - Riverpod State Controllers: `dashboard_controller.dart` dan `reports_controller.dart`.
+    - UI Neobrutalism Widgets (Mengikuti Prinsip Standar Data Visualization):
+      - `SummaryCardsRow`: Hero Stat Tile Saldo Bersih dengan badge status surplus/defisit, kartu Pemasukan (Emerald Green), dan kartu Pengeluaran (Coral Red).
+      - `CategoryDistributionBar`: Stacked proportional segmented bar dengan gap 2px antar segmen, sudut membulat, dan daftar legenda kategori rapi.
+      - `SavingsRateCard`: Kartu rasio tabungan dengan progress bar Amber/Gold dan analisis kesehatan finansial.
+      - `MonthlyTrendChart`: Grouped bar chart perbandingan Pemasukan vs Pengeluaran 6 bulan terakhir dengan tooltip interaktif saat kolom bulan diklik.
+      - `PeriodSelectorWidget`: Pemilih periode dinamis (Bulan Ini, Hari Ini, Kemarin) dengan navigasi `← / →`.
+    - Full Screens: `DashboardScreen` (pengganti placeholder lama) dan `ReportsScreen`.
+    - Integrasi GoRouter: Rute `/app/dashboard` dan `/app/reports`.
+    - Unit tests: `dashboard_repository_test.dart`, `report_repository_test.dart`.
+  - [x] **Fase 7: Pengujian, Polish & Hardening**
+    - Konfigurasi Android Manifest: Izin `android.permission.INTERNET`, `android.permission.ACCESS_NETWORK_STATE`, dukungan HTTP lokal `android:usesCleartextTraffic="true"`, dan nama aplikasi resmi `SakuKu`.
+    - Konfigurasi koneksi USB perangkat Android (`adb reverse tcp:8000 tcp:8000`) agar HP Android dapat mengakses backend FastAPI di Mac secara langsung melalui `localhost:8000`.
+    - Hardening Keamanan Klien: Enkripsi Keystore (AES-256 GCM), penanganan token expired 401 tanpa menghapus database SQLite lokal, dan sanitasi log token.
+    - Polish UI & UX Neobrutalisme: Transisi responsif, badge status sinkronisasi, modal konfirmasi penghapusan aman, dan visualisasi data finansial.
+    - Kesiapan pengujian langsung pada perangkat Android fisik via USB.
+  - [x] **Fase 8: Paritas Fitur Lengkap Web ke Mobile (Bottom Nav, OCR, Voice & Kas Tim)**
+    - **📱 Mobile Shell & Bottom Navigation Bar:** `MainScaffold` dengan ShellRoute permanen di GoRouter (Dashboard, Riwayat, Kas Tim, Laporan, Profil), Neobrutalism border 2px, hard shadow, dan Smart Floating Action Button ("Catat +").
+    - **📸 Modul Scan Nota (OCR Kamera & Galeri HP):** Integrasi `image_picker`, izin kamera `CAMERA`, endpoint `POST /receipts` (multipart image upload), ekstraksi teks nota otomatis via Tesseract backend, rincian barang belanjaan, dan konfirmasi transaksi (`POST /receipts/{id}/confirm`). Layar `ScanReceiptScreen`.
+    - **🎙️ Modul Input Suara (Voice NLP Indonesia):** Endpoint `POST /voice/parse`, dialog interaktif `VoiceInputModal` dengan tombol aksi mikrofon, Quick Voice Presets (*"Makan siang di warteg 25 ribu"*, *"Beli bensin pertalite 50000"*, *"Gaji bulanan 7 juta"*), parsing nominal & kategori otomatis, dan pencatatan instan zero-latency ke SQLite.
+    - **👥 Modul Kas Tim / Shared Ledger (Family Finance):** Endpoint `GET /groups`, `POST /groups`, `POST /groups/join`, `GET /groups/{id}/members`, `POST /groups/{id}/invitations`. Layar `GroupsScreen` (daftar kas tim, modal buat grup baru, modal gabung kode) dan `GroupDetailScreen` (ringkasan kas bersama, salin kode undangan, dan daftar anggota tim).
+    - Shortcut akses instan di Dashboard: tombol langsung Scan Nota dan Suara NLP.

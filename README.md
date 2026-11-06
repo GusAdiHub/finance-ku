@@ -18,7 +18,7 @@ cd backend
 python -m venv .venv
 
 # 3. Aktifkan virtual environment
-source .venv/Scripts/activate
+source .venv/bin/activate
 # (Jika pakai CMD biasa: .\.venv\Scripts\activate.bat)
 # (Jika pakai Git Bash / Linux / Mac: source .venv/bin/activate)
 

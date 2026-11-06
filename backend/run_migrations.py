@@ -7,7 +7,6 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
-import pymysql
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
@@ -20,26 +19,20 @@ import app.models  # noqa: F401
 
 
 def ensure_database_exists():
-    """Ensure the target MySQL database exists prior to running migrations."""
-    print(f"Connecting to MySQL server at {settings.DB_HOST}:{settings.DB_PORT} as {settings.DB_USER}...")
+    """Verify that the target PostgreSQL database is accessible."""
+    print(f"Connecting to PostgreSQL at {settings.DB_HOST}:{settings.DB_PORT} as {settings.DB_USER}...")
     try:
-        connection = pymysql.connect(
-            host=settings.DB_HOST,
-            port=settings.DB_PORT,
-            user=settings.DB_USER,
-            password=settings.DB_PASSWORD,
-            charset="utf8mb4",
-        )
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"CREATE DATABASE IF NOT EXISTS `{settings.DB_NAME}` "
-                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-            )
-            print(f"Database '{settings.DB_NAME}' is ready.")
-        connection.close()
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1"))
+            result.close()
+        print(f"Database '{settings.DB_NAME}' is ready.")
     except Exception as exc:
-        print(f"Error checking/creating database '{settings.DB_NAME}': {exc}")
-        print("Continuing with existing connection attempt...")
+        print(f"Error connecting to database '{settings.DB_NAME}': {exc}")
+        print(
+            "Please ensure the PostgreSQL database exists. "
+            "You can create it with: CREATE DATABASE finance_tracker;"
+        )
+        sys.exit(1)
 
 
 def run_alembic_migrations():
